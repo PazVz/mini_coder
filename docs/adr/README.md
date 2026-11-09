@@ -6,11 +6,12 @@ ADR 记录会影响后续工作的选择及原因，例如架构边界、数据�
 | --- | --- | --- |
 | [0001](0001-documentation-and-ai-guidance.md) | 仓库内文档与简短 AI 入口 | 已采纳 |
 | [0002](0002-initial-architecture-direction.md) | Go 单体、Docker 与 Vue 的初期架构方向 | 提议 |
-| [0003](0003-http-routing-with-chi.md) | 使用 Chi 组织 HTTP 路由与中间件 | 已采纳，待实现 |
-| [0004](0004-server-side-browser-sessions.md) | 浏览器采用服务端 Session + Cookie | 已采纳，待实现 |
+| [0003](0003-http-routing-with-chi.md) | 使用 Chi 组织 HTTP 路由与中间件 | 已采纳，已实现 |
+| [0004](0004-server-side-browser-sessions.md) | 浏览器采用服务端 Session + Cookie | 已采纳，HTTP 会话已实现 |
 | [0005](0005-rbac-resource-authorization.md) | 使用 RBAC 与资源归属约束管理资源访问 | 已采纳，待实现 |
 | [0006](0006-terminal-before-ide.md) | 先实现 xterm.js 终端，后续集成浏览器 IDE | 已采纳，待实现 |
 | [0007](0007-postgresql-user-persistence.md) | PostgreSQL 与最小用户持久化 | 已采纳，已实现 |
+| [0008](0008-authentication-and-http-errors.md) | 密码认证、持久化会话与统一 HTTP 失败响应 | 已采纳，已实现 |
 
 ## 使用方式
 

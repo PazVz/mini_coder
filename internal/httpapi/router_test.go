@@ -13,7 +13,7 @@ import (
 func TestHealthz(t *testing.T) {
 	t.Parallel()
 	response := httptest.NewRecorder()
-	httpapi.NewHandler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/healthz", nil))
+	httpapi.NewHandler(httpapi.Config{}).ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/healthz", nil))
 
 	if response.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
@@ -47,7 +47,7 @@ func TestRouting(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			response := httptest.NewRecorder()
-			httpapi.NewHandler().ServeHTTP(response, httptest.NewRequest(tc.method, tc.path, nil))
+			httpapi.NewHandler(httpapi.Config{}).ServeHTTP(response, httptest.NewRequest(tc.method, tc.path, nil))
 			if response.Code != tc.status {
 				t.Errorf("status = %d, want %d", response.Code, tc.status)
 			}
@@ -57,7 +57,7 @@ func TestRouting(t *testing.T) {
 
 func TestHealthzHEAD(t *testing.T) {
 	t.Parallel()
-	server := httptest.NewServer(httpapi.NewHandler())
+	server := httptest.NewServer(httpapi.NewHandler(httpapi.Config{}))
 	t.Cleanup(server.Close)
 
 	response, err := server.Client().Head(server.URL + "/healthz")

@@ -7,12 +7,19 @@ package dbgen
 
 import (
 	"context"
+	"time"
 )
 
 const createUser = `-- name: CreateUser :one
-INSERT INTO users (username, password_hash)
-VALUES ($1, $2)
-RETURNING id, username, password_hash, status, created_at, updated_at
+WITH created AS (
+    INSERT INTO users (username, password_hash)
+    VALUES ($1, $2)
+    RETURNING id, username, password_hash, status, created_at, updated_at
+), assigned AS (
+    INSERT INTO user_roles (user_id, role)
+    SELECT id, 'member' FROM created
+)
+SELECT id, username, password_hash, status, created_at, updated_at FROM created
 `
 
 type CreateUserParams struct {
@@ -20,9 +27,18 @@ type CreateUserParams struct {
 	PasswordHash string `json:"-"`
 }
 
-func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, error) {
+type CreateUserRow struct {
+	ID           int64
+	Username     string
+	PasswordHash string
+	Status       string
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+}
+
+func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (CreateUserRow, error) {
 	row := q.db.QueryRow(ctx, createUser, arg.Username, arg.PasswordHash)
-	var i User
+	var i CreateUserRow
 	err := row.Scan(
 		&i.ID,
 		&i.Username,
