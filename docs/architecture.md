@@ -24,6 +24,8 @@ docs/                       项目指南、架构与决策记录
 
 阅读代码时先看 `internal/httpapi/router.go` 及测试，再看 `cmd/server/main.go`。
 
+追踪认证时，按 `httpapi/auth.go` → `auth/service.go` → `database/queries/auth.sql` 阅读：HTTP 层解析凭据并处理 Cookie，业务层组织事务，SQL 检查会话过期和用户状态。账号停用时的会话撤销位于 `migrations/00002_auth.sql` 的 `users_revoke_sessions` 触发器，与登录时的用户行锁共同保证并发行为；对应测试在 `auth/auth_integration_test.go`。
+
 数据层从 `migrations/00001_create_users.sql` 和 `queries/users.sql` 开始阅读。`database.Open` 创建连接池并验证连接；`dbgen.New(pool)` 提供用户创建和查询，`WithTx` 支持事务。`cmd/migrate` 通过 Goose 执行嵌入的迁移，HTTP 服务不自动修改表结构。`/healthz` 与 `/api/v1/auth` 都使用 Chi。HTTP 层通过小接口调用 `auth.Service`，统一映射业务错误；业务层使用 sqlc 和 pgx 事务，密码哈希与会话令牌不进入用户响应。用户基础规则见 [ADR-0007](adr/0007-postgresql-user-persistence.md)，认证模型、并发规则及错误格式见 [ADR-0008](adr/0008-authentication-and-http-errors.md)，接口见 [认证 API](auth-api.md)。
 
 ## 参考与简化

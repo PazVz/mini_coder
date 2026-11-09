@@ -21,22 +21,57 @@ func TestPasswordHash(t *testing.T) {
 			t.Fatalf("verify wrong password: %v, %v", match, err)
 		}
 	}
-	for _, hash := range []string{"", "plain password", strings.Replace(first, "m=19456", "m=999999999", 1), passwordPrefix + "invalid$invalid", first + "$extra"} {
-		if match, err := verifyPassword(hash, password); match || err == nil {
-			t.Fatalf("accepted malformed hash %q", hash)
-		}
+	for _, tc := range []struct {
+		name string
+		hash string
+	}{
+		{"empty", ""},
+		{"plaintext", "plain password"},
+		{"unsupported parameters", strings.Replace(first, "m=19456", "m=999999999", 1)},
+		{"invalid encoding", passwordPrefix + "invalid$invalid"},
+		{"extra component", first + "$extra"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if match, err := verifyPassword(tc.hash, password); match || err == nil {
+				t.Fatalf("verify malformed hash = %v, %v; want false and an error", match, err)
+			}
+		})
 	}
 }
 
 func TestCredentialValidation(t *testing.T) {
-	for _, c := range []Credentials{{"Alice", "a long password"}, {"ab", "a long password"}, {" admin", "a long password"}, {"admin", "short"}, {"admin", strings.Repeat("x", 1025)}, {"admin", "invalid utf8\xff"}} {
-		if validate(c) == nil {
-			t.Fatalf("accepted invalid credentials for %s", c.Username)
-		}
+	for _, tc := range []struct {
+		name     string
+		username string
+		password string
+	}{
+		{"uppercase username", "Alice", "a long password"},
+		{"short username", "ab", "a long password"},
+		{"leading username space", " admin", "a long password"},
+		{"short password", "admin", "short"},
+		{"oversize password", "admin", strings.Repeat("x", 1025)},
+		{"invalid UTF-8", "admin", "invalid utf8\xff"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			credentials := Credentials{Username: tc.username, Password: tc.password}
+			if err := validateCredentials(credentials); err == nil {
+				t.Fatal("validateCredentials succeeded, want a validation error")
+			}
+		})
 	}
-	for _, password := range []string{strings.Repeat("密", 12), strings.Repeat(" ", 12), strings.Repeat("x", 1024)} {
-		if err := validate(Credentials{"admin", password}); err != nil {
-			t.Fatal(err)
-		}
+	for _, tc := range []struct {
+		name     string
+		password string
+	}{
+		{"Unicode characters", strings.Repeat("密", 12)},
+		{"spaces preserved", strings.Repeat(" ", 12)},
+		{"maximum bytes", strings.Repeat("x", 1024)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			credentials := Credentials{Username: "admin", Password: tc.password}
+			if err := validateCredentials(credentials); err != nil {
+				t.Fatalf("validateCredentials = %v, want nil", err)
+			}
+		})
 	}
 }

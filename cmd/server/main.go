@@ -87,10 +87,18 @@ func run(ctx context.Context, addr, databaseURL string, logger *slog.Logger) err
 			}
 		}
 	}()
-	defer func() { stopCleanup(); <-cleanupDone }()
+	// Stop and join the cleanup worker before the deferred pool.Close runs.
+	defer func() {
+		stopCleanup()
+		<-cleanupDone
+	}()
 
 	server := &http.Server{
-		Handler:           httpapi.NewHandler(httpapi.Config{Auth: authService, Logger: logger, CookieSecure: secure}),
+		Handler: httpapi.NewHandler(httpapi.Config{
+			Auth:         authService,
+			Logger:       logger,
+			CookieSecure: secure,
+		}),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      10 * time.Second,
