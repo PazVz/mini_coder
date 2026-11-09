@@ -29,7 +29,7 @@ func TestMigrations(t *testing.T) {
 	ctx := t.Context()
 	for _, state := range []goose.State{goose.StatePending, goose.StateApplied} {
 		statuses, err := provider.Status(ctx)
-		if err != nil || len(statuses) != 2 {
+		if err != nil || len(statuses) != 3 {
 			t.Fatalf("migration status = %v, error = %v", statuses, err)
 		}
 		for _, status := range statuses {
@@ -46,7 +46,10 @@ func TestMigrations(t *testing.T) {
 	if _, err := provider.Down(ctx); err != nil {
 		t.Fatal(err)
 	}
-	// Roll back the auth migration and then the original users migration.
+	// Roll back authentication and then the original users migration.
+	if _, err := provider.Down(ctx); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := provider.Down(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -151,6 +154,10 @@ func TestAuthMigrationPreservesExistingUsers(t *testing.T) {
 	u, err := dbgen.New(pool).GetAuthUserByUsername(ctx, "existing")
 	if err != nil || u.ID != id || u.Role != "member" {
 		t.Fatalf("upgrade user: %+v %v", u, err)
+	}
+	// Remove the management gate before rolling back authentication.
+	if _, err := provider.Down(ctx); err != nil {
+		t.Fatal(err)
 	}
 	if _, err := provider.Down(ctx); err != nil {
 		t.Fatal(err)

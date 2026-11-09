@@ -21,15 +21,25 @@ type Authenticator interface {
 	Logout(context.Context, string) error
 }
 
-// Config supplies the authentication service, request logger and cookie security policy.
+// UserManager is the business boundary for administrator-managed accounts.
+type UserManager interface {
+	CreateUser(context.Context, int64, auth.Credentials) (auth.User, error)
+	ListUsers(context.Context, int64, auth.ListUsersOptions) (auth.UserPage, error)
+	UpdateUserStatus(context.Context, int64, int64, string) (auth.User, error)
+	UpdateUserRole(context.Context, int64, int64, string) (auth.User, error)
+}
+
+// Config supplies the account services, request logger and cookie security policy.
 type Config struct {
 	Auth         Authenticator
+	Users        UserManager
 	Logger       *slog.Logger
 	CookieSecure bool
 }
 
 type api struct {
 	auth         Authenticator
+	users        UserManager
 	logger       *slog.Logger
 	cookieSecure bool
 }
@@ -42,6 +52,7 @@ func NewHandler(config Config) http.Handler {
 	}
 	a := &api{
 		auth:         config.Auth,
+		users:        config.Users,
 		logger:       logger,
 		cookieSecure: config.CookieSecure,
 	}
@@ -76,14 +87,21 @@ func NewHandler(config Config) http.Handler {
 	})
 	router.Get("/healthz", healthz)
 	router.Head("/healthz", healthz)
+	limit := newAttemptLimiter(time.Now)
 	router.Route("/api/v1/auth", func(router chi.Router) {
 		router.Use(noStore)
-		limit := newAttemptLimiter(time.Now)
 		router.Get("/setup", a.setupStatus)
 		router.With(limit.middleware).Post("/setup", a.setup)
 		router.With(limit.middleware).Post("/login", a.login)
 		router.With(a.requireUser).Get("/me", a.me)
 		router.Post("/logout", a.logout)
+	})
+	router.Route("/api/v1/users", func(router chi.Router) {
+		router.Use(noStore, a.requireUser)
+		router.With(limit.middleware).Post("/", a.createUser)
+		router.Get("/", a.listUsers)
+		router.Patch("/{id}/status", a.updateUserStatus)
+		router.Patch("/{id}/role", a.updateUserRole)
 	})
 	return router
 }

@@ -96,6 +96,7 @@ func run(ctx context.Context, addr, databaseURL string, logger *slog.Logger) err
 	server := &http.Server{
 		Handler: httpapi.NewHandler(httpapi.Config{
 			Auth:         authService,
+			Users:        authService,
 			Logger:       logger,
 			CookieSecure: secure,
 		}),

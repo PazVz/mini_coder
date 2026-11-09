@@ -29,6 +29,10 @@ type User struct {
 	UpdatedAt    time.Time
 }
 
+type UserManagementLock struct {
+	Singleton bool
+}
+
 type UserRole struct {
 	UserID int64
 	Role   string

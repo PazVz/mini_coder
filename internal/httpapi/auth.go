@@ -1,14 +1,12 @@
 package httpapi
 
 import (
-	"encoding/json"
 	"errors"
-	"io"
-	"mime"
 	"net/http"
 	"time"
 
 	"github.com/PazVz/mini_coder/internal/auth"
+	"github.com/PazVz/mini_coder/internal/authz"
 )
 
 const (
@@ -27,7 +25,7 @@ func sessionToken(r *http.Request) string {
 func (a *api) setupStatus(w http.ResponseWriter, r *http.Request) {
 	needed, err := a.auth.NeedsSetup(r.Context())
 	if err != nil {
-		a.authError(w, r, err)
+		a.serviceError(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, struct {
@@ -36,26 +34,26 @@ func (a *api) setupStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *api) setup(w http.ResponseWriter, r *http.Request) {
-	credentials, ok := readCredentials(w, r)
+	credentials, ok := readJSON[auth.Credentials](w, r)
 	if !ok {
 		return
 	}
 	user, err := a.auth.Setup(r.Context(), r.Header.Get("X-Setup-Token"), credentials)
 	if err != nil {
-		a.authError(w, r, err)
+		a.serviceError(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, user)
 }
 
 func (a *api) login(w http.ResponseWriter, r *http.Request) {
-	credentials, ok := readCredentials(w, r)
+	credentials, ok := readJSON[auth.Credentials](w, r)
 	if !ok {
 		return
 	}
 	session, err := a.auth.Login(r.Context(), credentials)
 	if err != nil {
-		a.authError(w, r, err)
+		a.serviceError(w, r, err)
 		return
 	}
 	http.SetCookie(w, a.cookie(session.Token, session.ExpiresAt, 24*60*60))
@@ -64,7 +62,7 @@ func (a *api) login(w http.ResponseWriter, r *http.Request) {
 
 func (a *api) logout(w http.ResponseWriter, r *http.Request) {
 	if err := a.auth.Logout(r.Context(), sessionToken(r)); err != nil {
-		a.authError(w, r, err)
+		a.serviceError(w, r, err)
 		return
 	}
 	http.SetCookie(w, a.cookie("", time.Unix(1, 0), -1))
@@ -90,7 +88,7 @@ func (a *api) me(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, user)
 }
 
-func (a *api) authError(w http.ResponseWriter, r *http.Request, err error) {
+func (a *api) serviceError(w http.ResponseWriter, r *http.Request, err error) {
 	var validation *auth.ValidationError
 	if errors.As(err, &validation) {
 		fields := make([]Validation, 0, len(validation.Fields))
@@ -105,6 +103,12 @@ func (a *api) authError(w http.ResponseWriter, r *http.Request, err error) {
 		return
 	}
 	switch {
+	case errors.Is(err, authz.ErrForbidden):
+		writeError(w, r, http.StatusForbidden, "forbidden", "没有执行此操作的权限")
+	case errors.Is(err, auth.ErrUserNotFound):
+		writeError(w, r, http.StatusNotFound, "not_found", "用户不存在")
+	case errors.Is(err, auth.ErrLastAdmin):
+		writeError(w, r, http.StatusConflict, "last_admin", "须保留至少一个启用中的管理员")
 	case errors.Is(err, auth.ErrInvalidCredentials):
 		writeError(w, r, http.StatusUnauthorized, "invalid_credentials", "用户名或密码错误")
 	case errors.Is(err, auth.ErrUnauthenticated):
@@ -121,42 +125,4 @@ func (a *api) authError(w http.ResponseWriter, r *http.Request, err error) {
 		a.logger.ErrorContext(r.Context(), "request failed", "request_id", requestID(r), "error", err)
 		writeError(w, r, http.StatusInternalServerError, "internal_error", "服务暂时无法处理请求")
 	}
-}
-
-// readCredentials accepts one bounded JSON object and writes an HTTP error on failure.
-func readCredentials(w http.ResponseWriter, r *http.Request) (auth.Credentials, bool) {
-	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
-	if err != nil || mediaType != "application/json" {
-		writeError(w, r, http.StatusUnsupportedMediaType, "unsupported_media_type", "请求须使用 application/json")
-		return auth.Credentials{}, false
-	}
-	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
-	decoder := json.NewDecoder(r.Body)
-	decoder.DisallowUnknownFields()
-	// A pointer distinguishes a null document from a credentials object.
-	var credentials *auth.Credentials
-	err = decoder.Decode(&credentials)
-	if err == nil {
-		var extra any
-		if nextErr := decoder.Decode(&extra); nextErr != io.EOF {
-			if nextErr == nil {
-				err = errors.New("multiple JSON values")
-			} else {
-				err = nextErr
-			}
-		}
-	}
-	if err == nil && credentials == nil {
-		err = errors.New("null request")
-	}
-	if err != nil {
-		var tooLarge *http.MaxBytesError
-		if errors.As(err, &tooLarge) {
-			writeError(w, r, http.StatusRequestEntityTooLarge, "request_too_large", "请求体超过 16 KiB")
-		} else {
-			writeError(w, r, http.StatusBadRequest, "invalid_json", "请求体必须是一个有效的 JSON 对象，且仅包含约定字段")
-		}
-		return auth.Credentials{}, false
-	}
-	return *credentials, true
 }
