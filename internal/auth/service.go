@@ -1,4 +1,4 @@
-// Package auth implements password authentication and persistent browser sessions.
+// Package auth implements account management, password authentication and persistent sessions.
 package auth
 
 import (
@@ -36,14 +36,14 @@ var (
 
 var usernamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{2,31}$`)
 
-// FieldError describes a rejected credential field using a stable code and a readable detail.
+// FieldError describes a rejected input field using a stable code and a readable detail.
 type FieldError struct {
 	Field  string
 	Code   string
 	Detail string
 }
 
-// ValidationError collects credential errors so callers can report them together.
+// ValidationError collects input errors so callers can report them together.
 type ValidationError struct{ Fields []FieldError }
 
 // Error implements error for credential validation failures.
@@ -73,7 +73,7 @@ type Session struct {
 	ExpiresAt time.Time
 }
 
-// Service manages administrator setup, password login and persistent sessions.
+// Service manages accounts, administrator setup, password login and persistent sessions.
 type Service struct {
 	pool       *pgxpool.Pool
 	queries    *dbgen.Queries

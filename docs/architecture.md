@@ -2,13 +2,14 @@
 
 ## 当前实现
 
-当前程序是使用 Chi 路由的单进程 HTTP 服务，已接入 PostgreSQL、版本化迁移、用户与会话持久化，完成首次管理员初始化和密码认证。完整 RBAC、Docker 资源管理和前端尚未实现。
+当前程序是使用 Chi 路由的单进程 HTTP 服务，已接入 PostgreSQL、版本化迁移、用户与会话持久化，完成首次管理员初始化、密码认证、管理员用户管理和固定角色授权。工作区归属授权、Docker 资源管理和前端待实现。
 
 ```text
 cmd/server/                  进程入口、配置、信号处理和优雅退出
 cmd/migrate/                 独立迁移命令，支持 up / down / status
 internal/httpapi/            Chi 路由、统一失败响应、Cookie、CSRF 与限流
-internal/auth/               初始化、Argon2id 密码认证与会话业务
+internal/auth/               账号管理、初始化、Argon2id 密码认证与会话业务
+internal/authz/              内置角色到用户管理权限的固定映射
 internal/testutil/           集成测试专用的独立数据库 schema
 internal/database/           pgx 连接池、嵌入式 Goose 迁移与集成测试
   migrations/                表结构迁移 SQL
@@ -26,13 +27,15 @@ docs/                       项目指南、架构与决策记录
 
 追踪认证时，按 `httpapi/auth.go` → `auth/service.go` → `database/queries/auth.sql` 阅读：HTTP 层解析凭据并处理 Cookie，业务层组织事务，SQL 检查会话过期和用户状态。账号停用时的会话撤销位于 `migrations/00002_auth.sql` 的 `users_revoke_sessions` 触发器，与登录时的用户行锁共同保证并发行为；对应测试在 `auth/auth_integration_test.go`。
 
-数据层从 `migrations/00001_create_users.sql` 和 `queries/users.sql` 开始阅读。`database.Open` 创建连接池并验证连接；`dbgen.New(pool)` 提供用户创建和查询，`WithTx` 支持事务。`cmd/migrate` 通过 Goose 执行嵌入的迁移，HTTP 服务不自动修改表结构。`/healthz` 与 `/api/v1/auth` 都使用 Chi。HTTP 层通过小接口调用 `auth.Service`，统一映射业务错误；业务层使用 sqlc 和 pgx 事务，密码哈希与会话令牌不进入用户响应。用户基础规则见 [ADR-0007](adr/0007-postgresql-user-persistence.md)，认证模型、并发规则及错误格式见 [ADR-0008](adr/0008-authentication-and-http-errors.md)，接口见 [认证 API](auth-api.md)。
+追踪用户管理时，按 `httpapi/users.go` → `auth/users.go` → `authz/authorization.go` 与 `database/queries/user_management.sql` 阅读。业务层读取当前操作者权限，管理写事务先锁定 `migrations/00003_user_management.sql` 创建的单例行，再判断权限和剩余管理员。列表按 ID 游标分页；并发保护、事务回滚和 Cookie 闭环测试在 `auth/users*_integration_test.go`。具体规则见 [ADR-0009](adr/0009-user-management-and-authorization.md) 和 [用户管理 API](users-api.md)。
+
+数据层从 `migrations/00001_create_users.sql` 和 `queries/users.sql` 开始阅读。`database.Open` 创建连接池并验证连接；`dbgen.New(pool)` 提供用户创建和查询，`WithTx` 支持事务。`cmd/migrate` 通过 Goose 执行嵌入的迁移，HTTP 服务不自动修改表结构。`/healthz`、`/api/v1/auth` 与 `/api/v1/users` 都使用 Chi。HTTP 层通过小接口调用 `auth.Service`，统一映射业务错误；业务层使用 sqlc 和 pgx 事务，密码哈希与会话令牌不进入用户响应。用户基础规则见 [ADR-0007](adr/0007-postgresql-user-persistence.md)，认证模型、并发规则及错误格式见 [ADR-0008](adr/0008-authentication-and-http-errors.md)，接口见 [认证 API](auth-api.md)。
 
 ## 参考与简化
 
 Coder 的 `coderd` 负责控制平面和 API，`provisionerd` 执行基础设施操作，工作区中的 agent 提供连接能力。该职责划分可作为学习参照，详见 [Coder 架构文档](https://coder.com/docs/install/plan/architecture)。
 
-本项目拟从 Go 模块化单体起步，在同一服务中组织业务与后台任务，先用 Docker API 完成资源生命周期。架构方向及替代方案见 [ADR-0002（提议）](adr/0002-initial-architecture-direction.md)。下图是目标方向；目前已实现 HTTP、用户持久化和认证闭环：
+本项目拟从 Go 模块化单体起步，在同一服务中组织业务与后台任务，先用 Docker API 完成资源生命周期。架构方向及替代方案见 [ADR-0002（提议）](adr/0002-initial-architecture-direction.md)。下图是目标方向；目前已实现 HTTP、账号持久化、认证与用户管理授权闭环：
 
 ```mermaid
 flowchart LR
@@ -64,9 +67,9 @@ flowchart LR
 
 ## 技术方向与待决事项
 
-已确定 HTTP 路由采用 [Chi](adr/0003-http-routing-with-chi.md)，浏览器认证采用 [服务端 Session + Cookie](adr/0004-server-side-browser-sessions.md)，资源授权采用 [RBAC 与资源归属约束](adr/0005-rbac-resource-authorization.md)。工作区访问按 [先 xterm.js 终端、后 IDE 集成](adr/0006-terminal-before-ide.md) 推进。Chi 与浏览器认证已实现；完整 RBAC 和工作区访问待实现。
+已确定 HTTP 路由采用 [Chi](adr/0003-http-routing-with-chi.md)，浏览器认证采用 [服务端 Session + Cookie](adr/0004-server-side-browser-sessions.md)，资源授权采用 [RBAC 与资源归属约束](adr/0005-rbac-resource-authorization.md)。工作区访问按 [先 xterm.js 终端、后 IDE 集成](adr/0006-terminal-before-ide.md) 推进。Chi、浏览器认证与用户管理 RBAC 已实现；工作区归属授权和访问待实现。
 
-Go 为现有后端语言；前端优先 Vue + TypeScript，构建工具优先考虑 Vite；Docker Engine 是首个资源后端。持久化已采用 [PostgreSQL + pgx + sqlc + Goose](adr/0007-postgresql-user-persistence.md)。RBAC 实现库和前端具体依赖随功能实现确定，版本规则见 [本地开发](development.md)。
+Go 为现有后端语言；前端优先 Vue + TypeScript，构建工具优先考虑 Vite；Docker Engine 是首个资源后端。持久化已采用 [PostgreSQL + pgx + sqlc + Goose](adr/0007-postgresql-user-persistence.md)。当前 RBAC 使用代码中的固定权限映射；前端具体依赖随功能实现确定，版本规则见 [本地开发](development.md)。
 
 Session 管理登录身份和有效期，RBAC 根据角色判断动作权限，再按资源归属约束作用范围。授权规则集中在业务层，列表查询同样按可访问范围过滤。额度、并发限制和资源放置由资源管理与调度模块负责；终端握手及后续 IDE 访问复用资源授权规则，详见 [工作区访问设计](workspace-access.md)。
 

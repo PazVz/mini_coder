@@ -61,7 +61,7 @@ func (a *api) requireUser(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		user, err := a.auth.Authenticate(r.Context(), sessionToken(r))
 		if err != nil {
-			a.authError(w, r, err)
+			a.serviceError(w, r, err)
 			return
 		}
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), userKey{}, user)))

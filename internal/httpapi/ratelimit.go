@@ -12,7 +12,7 @@ type attemptWindow struct {
 	count int
 }
 
-// attemptLimiter shares attempt counts and in-flight slots between setup and login.
+// attemptLimiter shares attempt counts and in-flight slots between setup, login and user creation.
 type attemptLimiter struct {
 	mu     sync.Mutex
 	peers  map[string]attemptWindow
@@ -64,7 +64,7 @@ func (l *attemptLimiter) middleware(next http.Handler) http.Handler {
 		}
 		if !l.allow(peer) {
 			w.Header().Set("Retry-After", "60")
-			writeError(w, r, http.StatusTooManyRequests, "rate_limited", "认证请求过于频繁，请稍后重试")
+			writeError(w, r, http.StatusTooManyRequests, "rate_limited", "请求过于频繁，请稍后重试")
 			return
 		}
 		select {
@@ -72,7 +72,7 @@ func (l *attemptLimiter) middleware(next http.Handler) http.Handler {
 			defer func() { <-l.slots }()
 		default:
 			w.Header().Set("Retry-After", "1")
-			writeError(w, r, http.StatusTooManyRequests, "rate_limited", "认证请求过于频繁，请稍后重试")
+			writeError(w, r, http.StatusTooManyRequests, "rate_limited", "请求过于频繁，请稍后重试")
 			return
 		}
 		next.ServeHTTP(w, r)
