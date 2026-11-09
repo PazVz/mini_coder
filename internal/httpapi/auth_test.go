@@ -17,16 +17,17 @@ import (
 )
 
 type fakeAuth struct {
-	setupStatus  func() (bool, error)
-	setup        func(string, auth.Credentials) (auth.User, error)
-	login        func(auth.Credentials) (auth.Session, error)
-	authenticate func(string) (auth.User, error)
-	logout       func(string) error
+	setupStatus    func() (bool, error)
+	setup          func(string, auth.CreateUserInput) (auth.User, error)
+	login          func(auth.Credentials) (auth.Session, error)
+	authenticate   func(string) (auth.User, error)
+	logout         func(string) error
+	changePassword func(int64, string, auth.PasswordChange) error
 }
 
 func (f fakeAuth) NeedsSetup(context.Context) (bool, error) { return f.setupStatus() }
 
-func (f fakeAuth) Setup(_ context.Context, token string, credentials auth.Credentials) (auth.User, error) {
+func (f fakeAuth) Setup(_ context.Context, token string, credentials auth.CreateUserInput) (auth.User, error) {
 	return f.setup(token, credentials)
 }
 
@@ -39,6 +40,10 @@ func (f fakeAuth) Authenticate(_ context.Context, token string) (auth.User, erro
 }
 
 func (f fakeAuth) Logout(_ context.Context, token string) error { return f.logout(token) }
+
+func (f fakeAuth) ChangePassword(_ context.Context, userID int64, token string, change auth.PasswordChange) error {
+	return f.changePassword(userID, token, change)
+}
 
 func newTestHandler(f fakeAuth) http.Handler {
 	return NewHandler(Config{
@@ -100,6 +105,7 @@ func TestUnifiedRoutingErrors(t *testing.T) {
 		{"/api/v1/auth/login", http.MethodGet, http.MethodPost},
 		{"/api/v1/auth/setup", http.MethodPut, "GET, POST"},
 		{"/api/v1/auth/me", http.MethodPost, http.MethodGet},
+		{"/api/v1/auth/password", http.MethodGet, http.MethodPost},
 	} {
 		t.Run(tc.method+" "+tc.path, func(t *testing.T) {
 			w := perform(h, tc.method, tc.path, "", nil)
@@ -145,6 +151,7 @@ func TestAuthErrorMapping(t *testing.T) {
 		{auth.ErrUnauthenticated, http.StatusUnauthorized, "unauthenticated"},
 		{auth.ErrAlreadyInitialized, http.StatusConflict, "already_initialized"},
 		{auth.ErrUsernameTaken, http.StatusConflict, "username_taken"},
+		{auth.ErrEmailTaken, http.StatusConflict, "email_taken"},
 		{auth.ErrSetupDisabled, http.StatusForbidden, "setup_disabled"},
 		{auth.ErrSetupForbidden, http.StatusForbidden, "forbidden"},
 		{errors.New("database password=secret"), http.StatusInternalServerError, "internal_error"},
@@ -255,8 +262,8 @@ func TestCookieLifecycleAndAuthenticatedUser(t *testing.T) {
 func TestSetupHandlers(t *testing.T) {
 	h := newTestHandler(fakeAuth{
 		setupStatus: func() (bool, error) { return true, nil },
-		setup: func(token string, credentials auth.Credentials) (auth.User, error) {
-			if token != "setup-secret" || credentials.Username != "admin" {
+		setup: func(token string, credentials auth.CreateUserInput) (auth.User, error) {
+			if token != "setup-secret" || credentials.Username != "admin" || credentials.Email != "admin@example.com" {
 				t.Fatal("missing setup parameters")
 			}
 			return auth.User{ID: 1, Username: credentials.Username, Role: "admin"}, nil
@@ -265,14 +272,14 @@ func TestSetupHandlers(t *testing.T) {
 	if w := perform(h, http.MethodGet, "/api/v1/auth/setup", "", nil); w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"needs_setup":true`) {
 		t.Fatalf("setup status: %s", w.Body.String())
 	}
-	w := perform(h, http.MethodPost, "/api/v1/auth/setup", `{"username":"admin","password":"a long password"}`, map[string]string{"Content-Type": "application/json", "X-Setup-Token": "setup-secret"})
+	w := perform(h, http.MethodPost, "/api/v1/auth/setup", `{"username":"admin","email":"admin@example.com","password":"a long password"}`, map[string]string{"Content-Type": "application/json", "X-Setup-Token": "setup-secret"})
 	if w.Code != http.StatusCreated || len(w.Result().Cookies()) != 0 {
 		t.Fatalf("setup: %d %s", w.Code, w.Body.String())
 	}
 }
 
 func TestCrossOriginProtection(t *testing.T) {
-	for _, path := range []string{"/api/v1/auth/login", "/api/v1/auth/setup", "/api/v1/auth/logout"} {
+	for _, path := range []string{"/api/v1/auth/login", "/api/v1/auth/setup", "/api/v1/auth/logout", "/api/v1/auth/password"} {
 		for _, tc := range []struct {
 			name    string
 			headers map[string]string

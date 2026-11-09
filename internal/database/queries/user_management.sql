@@ -2,12 +2,12 @@
 SELECT singleton FROM user_management_lock WHERE singleton = true FOR UPDATE;
 
 -- name: GetManagedUser :one
-SELECT u.id, u.username, u.status, u.created_at, u.updated_at, r.role
+SELECT u.id, u.username, u.email, u.email_verified_at, u.status, u.created_at, u.updated_at, r.role
 FROM users u JOIN user_roles r ON r.user_id = u.id
 WHERE u.id = $1;
 
 -- name: ListManagedUsers :many
-SELECT u.id, u.username, u.status, u.created_at, u.updated_at, r.role
+SELECT u.id, u.username, u.email, u.email_verified_at, u.status, u.created_at, u.updated_at, r.role
 FROM users u JOIN user_roles r ON r.user_id = u.id
 WHERE u.id > sqlc.arg(after_id)::bigint
 ORDER BY u.id

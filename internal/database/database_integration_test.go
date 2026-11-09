@@ -10,6 +10,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/pressly/goose/v3"
 
@@ -29,7 +30,7 @@ func TestMigrations(t *testing.T) {
 	ctx := t.Context()
 	for _, state := range []goose.State{goose.StatePending, goose.StateApplied} {
 		statuses, err := provider.Status(ctx)
-		if err != nil || len(statuses) != 3 {
+		if err != nil || len(statuses) != 4 {
 			t.Fatalf("migration status = %v, error = %v", statuses, err)
 		}
 		for _, status := range statuses {
@@ -46,7 +47,10 @@ func TestMigrations(t *testing.T) {
 	if _, err := provider.Down(ctx); err != nil {
 		t.Fatal(err)
 	}
-	// Roll back authentication and then the original users migration.
+	// Roll back user management, authentication and then the original users migration.
+	if _, err := provider.Down(ctx); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := provider.Down(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -67,7 +71,7 @@ func TestUserPersistence(t *testing.T) {
 	ctx := t.Context()
 	queries := dbgen.New(pool)
 	created, err := queries.CreateUser(ctx, dbgen.CreateUserParams{
-		Username: "alice", PasswordHash: "test-only-password-hash",
+		Username: "alice", PasswordHash: pgtype.Text{String: "test-only-password-hash", Valid: true},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -96,13 +100,13 @@ func TestUserPersistence(t *testing.T) {
 	if _, err := queries.GetUserByID(ctx, -1); !errors.Is(err, pgx.ErrNoRows) {
 		t.Fatalf("missing ID: %v", err)
 	}
-	_, err = queries.CreateUser(ctx, dbgen.CreateUserParams{Username: "alice", PasswordHash: "another-test-hash"})
+	_, err = queries.CreateUser(ctx, dbgen.CreateUserParams{Username: "alice", PasswordHash: pgtype.Text{String: "another-test-hash", Valid: true}})
 	assertPostgresError(t, err, "23505", "users_username_key")
 	for _, name := range []string{"", "ab", "Alice", "a b", "álî", "用户一", strings.Repeat("a", 33)} {
-		_, err := queries.CreateUser(ctx, dbgen.CreateUserParams{Username: name, PasswordHash: "test-hash"})
+		_, err := queries.CreateUser(ctx, dbgen.CreateUserParams{Username: name, PasswordHash: pgtype.Text{String: "test-hash", Valid: true}})
 		assertPostgresError(t, err, "23514", "users_username_format")
 	}
-	_, err = queries.CreateUser(ctx, dbgen.CreateUserParams{Username: "bob", PasswordHash: " "})
+	_, err = queries.CreateUser(ctx, dbgen.CreateUserParams{Username: "bob", PasswordHash: pgtype.Text{String: " ", Valid: true}})
 	assertPostgresError(t, err, "23514", "users_password_hash_nonempty")
 	_, err = pool.Exec(ctx, "UPDATE users SET status = 'unknown' WHERE id = $1", created.ID)
 	assertPostgresError(t, err, "23514", "users_status_check")
@@ -119,7 +123,7 @@ func TestUserTransactionRollback(t *testing.T) {
 	defer tx.Rollback(context.Background())
 	queries := dbgen.New(pool)
 	_, err = queries.WithTx(tx).CreateUser(ctx, dbgen.CreateUserParams{
-		Username: "rolled-back", PasswordHash: "test-hash",
+		Username: "rolled-back", PasswordHash: pgtype.Text{String: "test-hash", Valid: true},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -155,15 +159,19 @@ func TestAuthMigrationPreservesExistingUsers(t *testing.T) {
 	if err != nil || u.ID != id || u.Role != "member" {
 		t.Fatalf("upgrade user: %+v %v", u, err)
 	}
-	// Remove the management gate before rolling back authentication.
+	// Remove email fields and the management gate before rolling back authentication.
 	if _, err := provider.Down(ctx); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := provider.Down(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := dbgen.New(pool).GetUserByID(ctx, id); err != nil {
-		t.Fatalf("auth downgrade lost user: %v", err)
+	if _, err := provider.Down(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var exists bool
+	if err := pool.QueryRow(ctx, "SELECT EXISTS (SELECT 1 FROM users WHERE id=$1)", id).Scan(&exists); err != nil || !exists {
+		t.Fatalf("auth downgrade lost user: exists=%v err=%v", exists, err)
 	}
 	migrateUp(t, provider)
 	if u, err := dbgen.New(pool).GetAuthUserByUsername(ctx, "existing"); err != nil || u.Role != "member" {

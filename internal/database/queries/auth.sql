@@ -24,10 +24,13 @@ VALUES ($1, $2, now() + interval '24 hours')
 RETURNING expires_at;
 
 -- name: GetSessionUser :one
-SELECT u.id, u.username, u.status, u.created_at, u.updated_at, r.role
+SELECT u.id, u.username, u.email, u.email_verified_at, u.status, u.created_at, u.updated_at, r.role
 FROM sessions s JOIN users u ON u.id = s.user_id
 JOIN user_roles r ON r.user_id = u.id
-WHERE s.token_hash = $1 AND s.expires_at > now() AND u.status = 'active';
+WHERE s.token_hash = $1 AND s.expires_at > clock_timestamp() AND u.status = 'active';
+
+-- name: UpdatePassword :exec
+UPDATE users SET password_hash = $2, updated_at = clock_timestamp() WHERE id = $1;
 
 -- name: DeleteSession :exec
 DELETE FROM sessions WHERE token_hash = $1;

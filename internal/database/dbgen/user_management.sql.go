@@ -8,6 +8,8 @@ package dbgen
 import (
 	"context"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const countActiveAdmins = `-- name: CountActiveAdmins :one
@@ -23,18 +25,20 @@ func (q *Queries) CountActiveAdmins(ctx context.Context) (int64, error) {
 }
 
 const getManagedUser = `-- name: GetManagedUser :one
-SELECT u.id, u.username, u.status, u.created_at, u.updated_at, r.role
+SELECT u.id, u.username, u.email, u.email_verified_at, u.status, u.created_at, u.updated_at, r.role
 FROM users u JOIN user_roles r ON r.user_id = u.id
 WHERE u.id = $1
 `
 
 type GetManagedUserRow struct {
-	ID        int64
-	Username  string
-	Status    string
-	CreatedAt time.Time
-	UpdatedAt time.Time
-	Role      string
+	ID              int64
+	Username        string
+	Email           pgtype.Text
+	EmailVerifiedAt pgtype.Timestamptz
+	Status          string
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+	Role            string
 }
 
 func (q *Queries) GetManagedUser(ctx context.Context, id int64) (GetManagedUserRow, error) {
@@ -43,6 +47,8 @@ func (q *Queries) GetManagedUser(ctx context.Context, id int64) (GetManagedUserR
 	err := row.Scan(
 		&i.ID,
 		&i.Username,
+		&i.Email,
+		&i.EmailVerifiedAt,
 		&i.Status,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -52,7 +58,7 @@ func (q *Queries) GetManagedUser(ctx context.Context, id int64) (GetManagedUserR
 }
 
 const listManagedUsers = `-- name: ListManagedUsers :many
-SELECT u.id, u.username, u.status, u.created_at, u.updated_at, r.role
+SELECT u.id, u.username, u.email, u.email_verified_at, u.status, u.created_at, u.updated_at, r.role
 FROM users u JOIN user_roles r ON r.user_id = u.id
 WHERE u.id > $1::bigint
 ORDER BY u.id
@@ -65,12 +71,14 @@ type ListManagedUsersParams struct {
 }
 
 type ListManagedUsersRow struct {
-	ID        int64
-	Username  string
-	Status    string
-	CreatedAt time.Time
-	UpdatedAt time.Time
-	Role      string
+	ID              int64
+	Username        string
+	Email           pgtype.Text
+	EmailVerifiedAt pgtype.Timestamptz
+	Status          string
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+	Role            string
 }
 
 func (q *Queries) ListManagedUsers(ctx context.Context, arg ListManagedUsersParams) ([]ListManagedUsersRow, error) {
@@ -85,6 +93,8 @@ func (q *Queries) ListManagedUsers(ctx context.Context, arg ListManagedUsersPara
 		if err := rows.Scan(
 			&i.ID,
 			&i.Username,
+			&i.Email,
+			&i.EmailVerifiedAt,
 			&i.Status,
 			&i.CreatedAt,
 			&i.UpdatedAt,

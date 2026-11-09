@@ -8,6 +8,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/PazVz/mini_coder/internal/authz"
 	"github.com/PazVz/mini_coder/internal/database/dbgen"
@@ -34,25 +35,23 @@ type UserPage struct {
 
 // CreateUser creates an active member after checking the current actor's permissions.
 // actorID must come from a trusted authentication boundary, never the request body.
-func (s *Service) CreateUser(ctx context.Context, actorID int64, credentials Credentials) (User, error) {
+func (s *Service) CreateUser(ctx context.Context, actorID int64, input CreateUserInput) (User, error) {
 	tx, queries, err := s.beginUserManagement(ctx, actorID, authz.UserCreate)
 	if err != nil {
 		return User{}, err
 	}
 	defer tx.Rollback(context.Background())
-	if err := validateCredentials(credentials); err != nil {
+	email, err := validateCreateUser(input)
+	if err != nil {
 		return User{}, err
 	}
 	created, err := queries.CreateUser(ctx, dbgen.CreateUserParams{
-		Username:     credentials.Username,
-		PasswordHash: hashPassword(credentials.Password),
+		Username:     input.Username,
+		PasswordHash: pgtype.Text{String: hashPassword(input.Password), Valid: true},
+		Email:        pgtype.Text{String: email, Valid: true},
 	})
 	if err != nil {
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == "users_username_key" {
-			return User{}, ErrUsernameTaken
-		}
-		return User{}, fmt.Errorf("create user: %w", err)
+		return User{}, fmt.Errorf("create user: %w", userCreationError(err))
 	}
 	user, err := managedUser(ctx, queries, created.ID)
 	if err != nil {
@@ -94,7 +93,7 @@ func (s *Service) ListUsers(ctx context.Context, actorID int64, options ListUser
 }
 
 // UpdateUserStatus changes account availability and preserves an active administrator.
-// Disabling also revokes sessions through the trigger in migration 00002_auth.sql.
+// Disabling also revokes sessions through the trigger updated in migration 00004.
 func (s *Service) UpdateUserStatus(ctx context.Context, actorID, userID int64, status string) (User, error) {
 	tx, queries, err := s.beginUserManagement(ctx, actorID, authz.UserUpdateStatus)
 	if err != nil {
@@ -224,13 +223,28 @@ func managedUser(ctx context.Context, queries *dbgen.Queries, id int64) (User, e
 
 func publicManagedUser(row dbgen.GetManagedUserRow) User {
 	return User{
-		ID:        row.ID,
-		Username:  row.Username,
-		Status:    row.Status,
-		Role:      row.Role,
-		CreatedAt: row.CreatedAt,
-		UpdatedAt: row.UpdatedAt,
+		ID:            row.ID,
+		Username:      row.Username,
+		Email:         row.Email.String,
+		EmailVerified: row.EmailVerifiedAt.Valid,
+		Status:        row.Status,
+		Role:          row.Role,
+		CreatedAt:     row.CreatedAt,
+		UpdatedAt:     row.UpdatedAt,
 	}
+}
+
+func userCreationError(err error) error {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		switch pgErr.ConstraintName {
+		case "users_username_key":
+			return ErrUsernameTaken
+		case "users_email_key":
+			return ErrEmailTaken
+		}
+	}
+	return err
 }
 
 func invalidUserField(field, detail string) error {

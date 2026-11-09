@@ -11,12 +11,12 @@ import (
 )
 
 func (a *api) createUser(w http.ResponseWriter, r *http.Request) {
-	credentials, ok := readJSON[auth.Credentials](w, r)
+	input, ok := readJSON[auth.CreateUserInput](w, r)
 	if !ok {
 		return
 	}
 	actor := r.Context().Value(userKey{}).(auth.User)
-	user, err := a.users.CreateUser(r.Context(), actor.ID, credentials)
+	user, err := a.users.CreateUser(r.Context(), actor.ID, input)
 	if err != nil {
 		a.serviceError(w, r, err)
 		return
