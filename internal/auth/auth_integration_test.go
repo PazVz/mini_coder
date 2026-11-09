@@ -17,11 +17,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/PazVz/mini_coder/internal/auth"
 	"github.com/PazVz/mini_coder/internal/database/dbgen"
 	"github.com/PazVz/mini_coder/internal/httpapi"
 	"github.com/PazVz/mini_coder/internal/testutil"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 const setupToken = "integration-only-setup-token-32-bytes"
@@ -40,17 +41,19 @@ func newService(t *testing.T) (*auth.Service, *pgxpool.Pool) {
 	}
 	return service, pool
 }
-func setup(t *testing.T, s *auth.Service) auth.User {
+
+func setup(t *testing.T, service *auth.Service) auth.User {
 	t.Helper()
-	u, err := s.Setup(t.Context(), setupToken, credentials)
+	user, err := service.Setup(t.Context(), setupToken, credentials)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return u
+	return user
 }
-func login(t *testing.T, s *auth.Service) auth.Session {
+
+func login(t *testing.T, service *auth.Service) auth.Session {
 	t.Helper()
-	session, err := s.Login(t.Context(), credentials)
+	session, err := service.Login(t.Context(), credentials)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,7 +61,7 @@ func login(t *testing.T, s *auth.Service) auth.Session {
 }
 
 func TestSetupAuthorizationAndRace(t *testing.T) {
-	s, pool := newService(t)
+	service, pool := newService(t)
 	ctx := t.Context()
 	disabled, err := auth.NewService(pool, "")
 	if err != nil {
@@ -70,10 +73,10 @@ func TestSetupAuthorizationAndRace(t *testing.T) {
 	if _, err := auth.NewService(pool, "short"); err == nil {
 		t.Fatal("accepted weak setup token")
 	}
-	if _, err := s.Setup(ctx, "wrong-token", credentials); !errors.Is(err, auth.ErrSetupForbidden) {
+	if _, err := service.Setup(ctx, "wrong-token", credentials); !errors.Is(err, auth.ErrSetupForbidden) {
 		t.Fatalf("setup token: %v", err)
 	}
-	if needed, err := s.NeedsSetup(ctx); err != nil || !needed {
+	if needed, err := service.NeedsSetup(ctx); err != nil || !needed {
 		t.Fatalf("initial setup: %v %v", needed, err)
 	}
 	var wg sync.WaitGroup
@@ -85,7 +88,11 @@ func TestSetupAuthorizationAndRace(t *testing.T) {
 		t.Fatal(err)
 	}
 	for i := 0; i < 6; i++ {
-		wg.Go(func() { <-start; _, err := other.Setup(ctx, setupToken, credentials); results <- err })
+		wg.Go(func() {
+			<-start
+			_, err := other.Setup(ctx, setupToken, credentials)
+			results <- err
+		})
 	}
 	close(start)
 	wg.Wait()
@@ -114,34 +121,34 @@ func TestSetupAuthorizationAndRace(t *testing.T) {
 	if _, err := pool.Exec(ctx, "DELETE FROM users"); err != nil {
 		t.Fatal(err)
 	}
-	if needed, err := s.NeedsSetup(ctx); needed || err != nil {
+	if needed, err := service.NeedsSetup(ctx); needed || err != nil {
 		t.Fatalf("user deletion reopened setup: %v %v", needed, err)
 	}
 }
 
 func TestSetupConflictRollsBack(t *testing.T) {
-	s, pool := newService(t)
+	service, pool := newService(t)
 	_, err := dbgen.New(pool).CreateUser(t.Context(), dbgen.CreateUserParams{Username: "admin", PasswordHash: "old hash"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Setup(t.Context(), setupToken, credentials); !errors.Is(err, auth.ErrUsernameTaken) {
+	if _, err := service.Setup(t.Context(), setupToken, credentials); !errors.Is(err, auth.ErrUsernameTaken) {
 		t.Fatalf("conflict: %v", err)
 	}
-	if needed, err := s.NeedsSetup(t.Context()); !needed || err != nil {
+	if needed, err := service.NeedsSetup(t.Context()); !needed || err != nil {
 		t.Fatalf("failed setup changed state: %v %v", needed, err)
 	}
-	u, err := s.Setup(t.Context(), setupToken, auth.Credentials{Username: "new-admin", Password: credentials.Password})
-	if err != nil || u.Role != "admin" {
-		t.Fatalf("retry setup: %+v %v", u, err)
+	user, err := service.Setup(t.Context(), setupToken, auth.Credentials{Username: "new-admin", Password: credentials.Password})
+	if err != nil || user.Role != "admin" {
+		t.Fatalf("retry setup: %+v %v", user, err)
 	}
 }
 
 func TestSessionLifecycle(t *testing.T) {
-	s, pool := newService(t)
-	u := setup(t, s)
-	first, second := login(t, s), login(t, s)
-	if first.Token == second.Token || first.User != u {
+	service, pool := newService(t)
+	user := setup(t, service)
+	first, second := login(t, service), login(t, service)
+	if first.Token == second.Token || first.User != user {
 		t.Fatal("session fixation or wrong user")
 	}
 	hash := sha256.Sum256([]byte(first.Token))
@@ -152,7 +159,7 @@ func TestSessionLifecycle(t *testing.T) {
 	if len(stored) != 32 || string(stored) == first.Token {
 		t.Fatal("session token stored in plaintext")
 	}
-	persisted, err := dbgen.New(pool).GetUserByID(t.Context(), u.ID)
+	persisted, err := dbgen.New(pool).GetUserByID(t.Context(), user.ID)
 	if err != nil || !strings.HasPrefix(persisted.PasswordHash, "$argon2id$") || strings.Contains(persisted.PasswordHash, credentials.Password) {
 		t.Fatal("password was not hashed")
 	}
@@ -165,38 +172,55 @@ func TestSessionLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, err := restarted.Authenticate(t.Context(), first.Token); err != nil || got != u {
+	if got, err := restarted.Authenticate(t.Context(), first.Token); err != nil || got != user {
 		t.Fatalf("session did not persist: %+v %v", got, err)
 	}
-	for _, c := range []auth.Credentials{{Username: "missing", Password: credentials.Password}, {Username: "admin", Password: "incorrect password"}} {
-		if _, err := s.Login(t.Context(), c); !errors.Is(err, auth.ErrInvalidCredentials) {
-			t.Fatalf("invalid login: %v", err)
-		}
+	for _, tc := range []struct {
+		name        string
+		credentials auth.Credentials
+	}{
+		{"unknown user", auth.Credentials{Username: "missing", Password: credentials.Password}},
+		{"wrong password", auth.Credentials{Username: "admin", Password: "incorrect password"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := service.Login(t.Context(), tc.credentials); !errors.Is(err, auth.ErrInvalidCredentials) {
+				t.Fatalf("Login = %v, want %v", err, auth.ErrInvalidCredentials)
+			}
+		})
 	}
-	for _, token := range []string{"", "bad", strings.Repeat("a", 43)} {
-		if _, err := s.Authenticate(t.Context(), token); !errors.Is(err, auth.ErrUnauthenticated) {
-			t.Fatalf("invalid session: %v", err)
-		}
+	for _, tc := range []struct {
+		name  string
+		token string
+	}{
+		{"missing token", ""},
+		{"short token", "bad"},
+		{"noncanonical token", strings.Repeat("a", 43)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := service.Authenticate(t.Context(), tc.token); !errors.Is(err, auth.ErrUnauthenticated) {
+				t.Fatalf("Authenticate = %v, want %v", err, auth.ErrUnauthenticated)
+			}
+		})
 	}
-	if err := s.Logout(t.Context(), first.Token); err != nil {
+	if err := service.Logout(t.Context(), first.Token); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Logout(t.Context(), first.Token); err != nil {
+	if err := service.Logout(t.Context(), first.Token); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Authenticate(t.Context(), first.Token); !errors.Is(err, auth.ErrUnauthenticated) {
+	if _, err := service.Authenticate(t.Context(), first.Token); !errors.Is(err, auth.ErrUnauthenticated) {
 		t.Fatal("logged out session accepted")
 	}
-	if _, err := s.Authenticate(t.Context(), second.Token); err != nil {
+	if _, err := service.Authenticate(t.Context(), second.Token); err != nil {
 		t.Fatal("logout revoked another session")
 	}
 	if _, err := pool.Exec(t.Context(), "UPDATE sessions SET created_at=now()-interval '2 days',expires_at=now()-interval '1 day'"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Authenticate(t.Context(), second.Token); !errors.Is(err, auth.ErrUnauthenticated) {
+	if _, err := service.Authenticate(t.Context(), second.Token); !errors.Is(err, auth.ErrUnauthenticated) {
 		t.Fatal("expired session accepted")
 	}
-	if err := s.DeleteExpiredSessions(t.Context()); err != nil {
+	if err := service.DeleteExpiredSessions(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 	var count int
@@ -206,45 +230,48 @@ func TestSessionLifecycle(t *testing.T) {
 }
 
 func TestDisabledUserRevocationAndCurrentRole(t *testing.T) {
-	s, pool := newService(t)
-	u := setup(t, s)
-	first, second := login(t, s), login(t, s)
-	if _, err := pool.Exec(t.Context(), "UPDATE user_roles SET role='member' WHERE user_id=$1", u.ID); err != nil {
+	service, pool := newService(t)
+	user := setup(t, service)
+	first, second := login(t, service), login(t, service)
+	if _, err := pool.Exec(t.Context(), "UPDATE user_roles SET role='member' WHERE user_id=$1", user.ID); err != nil {
 		t.Fatal(err)
 	}
-	if current, err := s.Authenticate(t.Context(), first.Token); err != nil || current.Role != "member" {
+	if current, err := service.Authenticate(t.Context(), first.Token); err != nil || current.Role != "member" {
 		t.Fatalf("stale role: %+v %v", current, err)
 	}
-	if _, err := pool.Exec(t.Context(), "UPDATE users SET status='disabled',updated_at=now() WHERE id=$1", u.ID); err != nil {
+	if _, err := pool.Exec(t.Context(), "UPDATE users SET status='disabled',updated_at=now() WHERE id=$1", user.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Login(t.Context(), credentials); !errors.Is(err, auth.ErrInvalidCredentials) {
+	if _, err := service.Login(t.Context(), credentials); !errors.Is(err, auth.ErrInvalidCredentials) {
 		t.Fatalf("disabled login: %v", err)
 	}
-	if _, err := pool.Exec(t.Context(), "UPDATE users SET status='active',updated_at=now() WHERE id=$1", u.ID); err != nil {
+	if _, err := pool.Exec(t.Context(), "UPDATE users SET status='active',updated_at=now() WHERE id=$1", user.ID); err != nil {
 		t.Fatal(err)
 	}
 	for _, session := range []auth.Session{first, second} {
-		if _, err := s.Authenticate(t.Context(), session.Token); !errors.Is(err, auth.ErrUnauthenticated) {
+		if _, err := service.Authenticate(t.Context(), session.Token); !errors.Is(err, auth.ErrUnauthenticated) {
 			t.Fatal("reenabling restored a revoked session")
 		}
 	}
-	login(t, s)
+	login(t, service)
 }
 
 func TestLoginWaitsForDisableTransaction(t *testing.T) {
-	s, pool := newService(t)
-	u := setup(t, s)
+	service, pool := newService(t)
+	user := setup(t, service)
 	tx, err := pool.Begin(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer tx.Rollback(context.Background())
-	if _, err := tx.Exec(t.Context(), "UPDATE users SET status='disabled',updated_at=now() WHERE id=$1", u.ID); err != nil {
+	if _, err := tx.Exec(t.Context(), "UPDATE users SET status='disabled',updated_at=now() WHERE id=$1", user.ID); err != nil {
 		t.Fatal(err)
 	}
 	done := make(chan error, 1)
-	go func() { _, err := s.Login(t.Context(), credentials); done <- err }()
+	go func() {
+		_, err := service.Login(t.Context(), credentials)
+		done <- err
+	}()
 	// Observe the database lock rather than relying on timing of password hashing.
 	deadline := time.After(5 * time.Second)
 	ticker := time.NewTicker(10 * time.Millisecond)
@@ -280,8 +307,11 @@ waiting:
 }
 
 func TestHTTPAuthRoundTrip(t *testing.T) {
-	s, _ := newService(t)
-	server := httptest.NewServer(httpapi.NewHandler(httpapi.Config{Auth: s, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))}))
+	service, _ := newService(t)
+	server := httptest.NewServer(httpapi.NewHandler(httpapi.Config{
+		Auth:   service,
+		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}))
 	defer server.Close()
 	jar, _ := cookiejar.New(nil)
 	client := &http.Client{Jar: jar, Timeout: 5 * time.Second}
@@ -312,18 +342,18 @@ func TestHTTPAuthRoundTrip(t *testing.T) {
 		return string(data)
 	}
 	body := fmt.Sprintf(`{"username":%q,"password":%q}`, credentials.Username, credentials.Password)
-	request("GET", "/api/v1/auth/me", "", 401)
-	request("POST", "/api/v1/auth/setup", body, 201)
-	request("POST", "/api/v1/auth/setup", body, 409)
-	request("POST", "/api/v1/auth/login", body, 200)
-	request("GET", "/api/v1/auth/me", "", 200)
-	request("POST", "/api/v1/auth/logout", "", 204)
-	request("GET", "/api/v1/auth/me", "", 401)
-	request("POST", "/api/v1/auth/logout", "", 204)
+	request(http.MethodGet, "/api/v1/auth/me", "", http.StatusUnauthorized)
+	request(http.MethodPost, "/api/v1/auth/setup", body, http.StatusCreated)
+	request(http.MethodPost, "/api/v1/auth/setup", body, http.StatusConflict)
+	request(http.MethodPost, "/api/v1/auth/login", body, http.StatusOK)
+	request(http.MethodGet, "/api/v1/auth/me", "", http.StatusOK)
+	request(http.MethodPost, "/api/v1/auth/logout", "", http.StatusNoContent)
+	request(http.MethodGet, "/api/v1/auth/me", "", http.StatusUnauthorized)
+	request(http.MethodPost, "/api/v1/auth/logout", "", http.StatusNoContent)
 }
 
 func TestSetupRollsBackAfterUserCreation(t *testing.T) {
-	s, pool := newService(t)
+	service, pool := newService(t)
 	ctx := t.Context()
 	// Fail the last write, after both the user and role have been created.
 	_, err := pool.Exec(ctx, `CREATE FUNCTION fail_setup() RETURNS trigger LANGUAGE plpgsql AS $$
@@ -332,7 +362,7 @@ func TestSetupRollsBackAfterUserCreation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Setup(ctx, setupToken, credentials); err == nil {
+	if _, err := service.Setup(ctx, setupToken, credentials); err == nil {
 		t.Fatal("setup ignored database failure")
 	}
 	var users, roles int
@@ -342,11 +372,11 @@ func TestSetupRollsBackAfterUserCreation(t *testing.T) {
 	if users != 0 || roles != 0 {
 		t.Fatalf("partial setup persisted: %d users, %d roles", users, roles)
 	}
-	if needed, err := s.NeedsSetup(ctx); !needed || err != nil {
+	if needed, err := service.NeedsSetup(ctx); !needed || err != nil {
 		t.Fatalf("setup state changed on failure: %v %v", needed, err)
 	}
 	if _, err := pool.Exec(ctx, "DROP TRIGGER fail_setup ON auth_setup; DROP FUNCTION fail_setup()"); err != nil {
 		t.Fatal(err)
 	}
-	setup(t, s)
+	setup(t, service)
 }

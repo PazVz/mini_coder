@@ -6,17 +6,20 @@ package testutil
 import (
 	"context"
 	"crypto/rand"
-	"github.com/PazVz/mini_coder/internal/database"
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/pressly/goose/v3"
 	"os"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/pressly/goose/v3"
+
+	"github.com/PazVz/mini_coder/internal/database"
 )
 
-// Every test uses its own schema. Never migrate or truncate the caller's schema.
+// NewDatabase creates an isolated schema and registers cleanup for its pool and migrator.
+// Migrations and cleanup affect only this schema, not the caller's existing tables.
 func NewDatabase(t *testing.T) (*pgxpool.Pool, *goose.Provider) {
 	t.Helper()
 	url := os.Getenv("MINICODER_TEST_DATABASE_URL")
