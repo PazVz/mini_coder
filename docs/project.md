@@ -21,9 +21,9 @@
 
 ## 当前基础
 
-已具备 Go 服务、`/healthz`、优雅退出、PostgreSQL 连接、Goose 迁移、sqlc 用户创建与查询、单元与数据库集成测试、Makefile、PR 标题检查、CI 和标签发布脚本。开发与交付方式见 [协作与发布](workflow.md)。
+已具备 Chi HTTP 服务、`/healthz`、统一失败响应、优雅退出、PostgreSQL 连接、Goose 迁移、sqlc 用户与会话查询、单元与数据库集成测试、Makefile、PR 标题检查、CI 和标签发布脚本。开发与交付方式见 [协作与发布](workflow.md)。
 
-用户 API、认证授权、工作区业务和前端尚未实现。下一步实现首次管理员初始化、密码认证与 Session + Cookie 登录闭环，再增加用户管理及 RBAC。
+已完成首次管理员初始化、Argon2id 密码认证与 Session + Cookie 登录闭环，接口见 [认证 API](auth-api.md)。下一步增加用户管理及完整 RBAC；工作区业务和前端尚未实现。
 
 ## 建议推进顺序
 

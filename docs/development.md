@@ -17,6 +17,8 @@ Node.js 用于 PR 标题检查；前端工程尚未创建。本地数据库使�
 | Goose | `v3.29.0`，go.mod / go.sum | [发布记录](https://github.com/pressly/goose/releases/tag/v3.29.0) |
 | sqlc | `v1.31.1`，Makefile | [发布记录](https://github.com/sqlc-dev/sqlc/releases/tag/v1.31.1) |
 
+认证依赖于 2026-11-09 核实并固定：Chi `v5.5.0`（[官方发布](https://github.com/go-chi/chi/releases/tag/v5.5.0)）、Go x/crypto `v0.58.0`（[官方模块文档](https://pkg.go.dev/golang.org/x/crypto@v0.58.0)），具体版本见 go.mod / go.sum。
+
 sqlc 通过固定版本的 `go run` 执行，无需全局安装。首次生成或完整检查会下载并编译工具依赖。
 
 ## 启动与配置
@@ -34,6 +36,15 @@ make run
 `.env` 被 Git 忽略，程序和 Makefile 不自动加载它；上面的 shell 命令将配置导出到当前终端。示例账号和密码仅用于本地开发，Compose 仅绑定 `127.0.0.1:5432`。连接外部数据库时修改 `MINICODER_DATABASE_URL`，按部署环境配置 TLS。
 
 `MINICODER_DATABASE_URL` 必填，支持 pgx 接受的 PostgreSQL URL 或连接字符串。服务在启动时验证连接，最多等待 5 秒；失败则退出。连接成功不表示迁移已完成，启动前执行 `make migrate-up`。
+
+认证配置如下；已有 `.env` 升级时也需补充本地 HTTP 的 Cookie 配置：
+
+| 变量 | 默认与作用 |
+| --- | --- |
+| `MINICODER_SETUP_TOKEN` | 空值禁用初始化写接口；启用时至少 32 字节，建议 `openssl rand -hex 32` 生成 |
+| `MINICODER_COOKIE_SECURE` | 默认 `true`；本地 HTTP 明确设置 `false`，HTTPS 保持 `true` |
+
+初始化管理员、登录和退出示例见 [认证 API](auth-api.md)。
 
 另开终端：
 
@@ -61,9 +72,9 @@ make migrate-up
 
 迁移命令有 1 分钟超时，并以数据库 advisory lock 防止并发执行迁移。重复执行 `migrate-up` 不会再次应用已完成的版本。迁移 SQL 嵌入迁移程序，执行二进制时无需源码目录。
 
-`make migrate-down` 回滚最近一次迁移；当前第一版回滚会删除整个用户表及其数据，只在可丢弃的数据环境中使用。日常数据库升级通过新增迁移完成，已应用的迁移文件保持不变。
+`make migrate-down` 回滚最近一次迁移；认证迁移回滚会删除会话、角色和初始化状态，保留用户，重新升级会重新开放初始化；继续回滚第一版会删除整个用户表及其数据，只在可丢弃的数据环境中使用。日常数据库升级通过新增迁移完成，已应用的迁移文件保持不变。
 
-修改 `internal/database/queries/` 或新增迁移后执行 `make generate`，提交 SQL 和 `internal/database/dbgen/` 中的生成结果。`make generate-check` 检查生成文件是否同步。用户模型和用户名规则见 [ADR-0007](adr/0007-postgresql-user-persistence.md)。
+修改 `internal/database/queries/` 或新增迁移后执行 `make generate`，提交 SQL 和 `internal/database/dbgen/` 中的生成结果。`make generate-check` 检查生成文件是否同步。用户模型和用户名规则见 [ADR-0007](adr/0007-postgresql-user-persistence.md)，认证表结构及约定见 [ADR-0008](adr/0008-authentication-and-http-errors.md)。
 
 `make db-down` 停止并移除本项目容器，保留数据库卷；再次执行 `make db-up` 会复用已有数据。初次创建卷后修改 Compose 的账号或密码不会修改已有数据库账号。
 
@@ -83,7 +94,7 @@ make test-integration
 make check
 ```
 
-`make test` 无需数据库；`test-integration` 使用真实 PostgreSQL，要求配置测试连接，缺失配置或无法连接时失败。每个测试创建随机 schema，限定 `search_path`，并在完成后清理自身 schema；账号需要创建 schema 的权限。测试验证迁移升级、重复升级、回滚及重新升级、用户持久化与查询、数据约束和事务回滚。不要指向生产数据库。
+`make test` 无需数据库；`test-integration` 使用真实 PostgreSQL，要求配置测试连接，缺失配置或无法连接时失败。每个测试创建随机 schema，限定 `search_path`，并在完成后清理自身 schema；账号需要创建 schema 的权限。测试验证迁移升级、重复升级、回滚及重新升级、用户持久化、数据约束、初始化竞争、会话持久化与撤销、账号停用竞争，以及使用真实 Cookie 的 HTTP 登录闭环。不要指向生产数据库。
 
 `make check` 包含单元测试与集成测试。CI 和发布 workflow 使用相同 PostgreSQL 镜像及专用测试库。
 

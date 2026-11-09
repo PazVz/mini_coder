@@ -8,6 +8,18 @@ import (
 	"time"
 )
 
+type AuthSetup struct {
+	Singleton   bool
+	Initialized bool
+}
+
+type Session struct {
+	TokenHash []byte
+	UserID    int64
+	CreatedAt time.Time
+	ExpiresAt time.Time
+}
+
 type User struct {
 	ID           int64
 	Username     string
@@ -15,4 +27,9 @@ type User struct {
 	Status       string
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
+}
+
+type UserRole struct {
+	UserID int64
+	Role   string
 }

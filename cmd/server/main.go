@@ -10,9 +10,11 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
+	"github.com/PazVz/mini_coder/internal/auth"
 	"github.com/PazVz/mini_coder/internal/database"
 	"github.com/PazVz/mini_coder/internal/httpapi"
 )
@@ -54,9 +56,41 @@ func run(ctx context.Context, addr, databaseURL string, logger *slog.Logger) err
 		return err
 	}
 	defer pool.Close()
+	secure := true
+	if value := os.Getenv("MINICODER_COOKIE_SECURE"); value != "" {
+		secure, err = strconv.ParseBool(value)
+		if err != nil {
+			return errors.New("MINICODER_COOKIE_SECURE must be a boolean")
+		}
+	}
+	authService, err := auth.NewService(pool, os.Getenv("MINICODER_SETUP_TOKEN"))
+	if err != nil {
+		return err
+	}
+	cleanupCtx, stopCleanup := context.WithCancel(ctx)
+	cleanupDone := make(chan struct{})
+	go func() {
+		defer close(cleanupDone)
+		ticker := time.NewTicker(time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-cleanupCtx.Done():
+				return
+			case <-ticker.C:
+				queryCtx, cancel := context.WithTimeout(cleanupCtx, 30*time.Second)
+				cleanupErr := authService.DeleteExpiredSessions(queryCtx)
+				cancel()
+				if cleanupErr != nil && cleanupCtx.Err() == nil {
+					logger.Error("clean up expired sessions", "error", cleanupErr)
+				}
+			}
+		}
+	}()
+	defer func() { stopCleanup(); <-cleanupDone }()
 
 	server := &http.Server{
-		Handler:           httpapi.NewHandler(),
+		Handler:           httpapi.NewHandler(httpapi.Config{Auth: authService, Logger: logger, CookieSecure: secure}),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      10 * time.Second,

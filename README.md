@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-已实现 Go HTTP 服务、健康检查、优雅退出、PostgreSQL 连接、数据库迁移、用户持久化、测试和发布打包脚本，以及 GitHub Actions 配置。用户 API、认证授权、Docker 资源管理、前端和 semantic-release 尚未实现。
+已实现 Chi HTTP 服务、统一失败响应、健康检查、优雅退出、PostgreSQL 持久化、首次管理员初始化、密码登录和 Session + Cookie 会话，以及测试和发布打包脚本、GitHub Actions 配置。用户管理、完整 RBAC、Docker 资源管理、前端和 semantic-release 尚未实现。
 
 ## 快速开始
 
@@ -26,7 +26,7 @@ make run
 curl -i http://127.0.0.1:8080/healthz
 ```
 
-响应为 HTTP 200 和 `{"status":"ok"}`。健康检查只报告进程存活。服务启动要求数据库可连接，迁移需预先显式执行。
+响应为 HTTP 200 和 `{"status":"ok"}`。健康检查只报告进程存活。服务启动要求数据库可连接，迁移需预先显式执行。首次管理员初始化与登录操作见 [认证 API](docs/auth-api.md)。
 
 首次创建测试数据库，再运行完整检查：
 

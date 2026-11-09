@@ -43,7 +43,7 @@ test:
 
 test-integration:
 	@test -n "$${MINICODER_TEST_DATABASE_URL:-}" || { echo 'Set MINICODER_TEST_DATABASE_URL to a test PostgreSQL database.' >&2; exit 1; }
-	$(GO) test -tags=integration -race -count=1 -timeout=2m ./internal/database/...
+	$(GO) test -tags=integration -race -count=1 -timeout=2m ./...
 
 db-up:
 	docker compose up -d --wait postgres
