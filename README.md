@@ -4,13 +4,19 @@
 
 ## 当前状态
 
-已实现 Go HTTP 服务、健康检查、优雅退出、测试、本地检查与发布打包脚本，以及 GitHub Actions 配置。用户权限、数据库、Docker 资源管理、前端和 semantic-release 尚未实现。
+已实现 Go HTTP 服务、健康检查、优雅退出、PostgreSQL 连接、数据库迁移、用户持久化、测试和发布打包脚本，以及 GitHub Actions 配置。用户 API、认证授权、Docker 资源管理、前端和 semantic-release 尚未实现。
 
 ## 快速开始
 
-Go 版本以 [go.mod](go.mod) 为准；另需 Git、Make、Bash，以及运行 race detector 所需的 C 编译器。
+Go 版本以 [go.mod](go.mod) 为准；另需 Git、Make、Bash、C 编译器，以及 Docker Engine 与 Compose v2（或可连接的 PostgreSQL 18.6）。
 
 ```bash
+cp .env.example .env
+set -a
+. ./.env
+set +a
+make db-up
+make migrate-up
 make run
 ```
 
@@ -20,7 +26,16 @@ make run
 curl -i http://127.0.0.1:8080/healthz
 ```
 
-响应为 HTTP 200 和 `{"status":"ok"}`。代码变更提交前运行 `make check`。
+响应为 HTTP 200 和 `{"status":"ok"}`。健康检查只报告进程存活。服务启动要求数据库可连接，迁移需预先显式执行。
+
+首次创建测试数据库，再运行完整检查：
+
+```bash
+docker compose exec postgres createdb -U minicoder minicoder_test
+make check
+```
+
+`make check` 包含生成代码一致性检查和真实数据库集成测试。连接配置、迁移回滚及发布包使用见 [本地开发](docs/development.md)。
 
 ## 文档
 

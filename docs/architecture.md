@@ -2,11 +2,18 @@
 
 ## 当前实现
 
-当前程序是使用 Go 标准库的单进程 HTTP 服务，未接入数据库、身份系统、Docker API 或前端。
+当前程序是使用 Go 标准库路由的单进程 HTTP 服务，已接入 PostgreSQL、版本化迁移和最小用户持久化。身份认证、授权、Docker 资源管理和前端尚未实现。
 
 ```text
 cmd/server/                  进程入口、配置、信号处理和优雅退出
+cmd/migrate/                 独立迁移命令，支持 up / down / status
 internal/httpapi/            HTTP 路由、健康检查和接口测试
+internal/database/           pgx 连接池、嵌入式 Goose 迁移与集成测试
+  migrations/                表结构迁移 SQL
+  queries/                   用户创建和查询 SQL
+  dbgen/                     sqlc 生成的用户模型与查询方法
+compose.yaml                 本地 PostgreSQL 服务及持久化卷
+sqlc.yaml                    SQL 到 Go 的生成配置
 scripts/build-release.sh     交叉编译、打包和 SHA-256 校验和
 .github/scripts/             PR 标题校验
 .github/workflows/           CI、PR 标题检查、标签发布
@@ -15,11 +22,13 @@ docs/                       项目指南、架构与决策记录
 
 阅读代码时先看 `internal/httpapi/router.go` 及测试，再看 `cmd/server/main.go`。
 
+数据层从 `migrations/00001_create_users.sql` 和 `queries/users.sql` 开始阅读。`database.Open` 创建连接池并验证连接；`dbgen.New(pool)` 提供用户创建和查询，`WithTx` 支持事务。`cmd/migrate` 通过 Goose 执行嵌入的迁移，HTTP 服务不自动修改表结构。当前路由仍仅有 `/healthz`，用户查询尚未暴露为 HTTP API。模型规则见 [ADR-0007](adr/0007-postgresql-user-persistence.md)。
+
 ## 参考与简化
 
 Coder 的 `coderd` 负责控制平面和 API，`provisionerd` 执行基础设施操作，工作区中的 agent 提供连接能力。该职责划分可作为学习参照，详见 [Coder 架构文档](https://coder.com/docs/install/plan/architecture)。
 
-本项目拟从 Go 模块化单体起步，在同一服务中组织业务与后台任务，先用 Docker API 完成资源生命周期。架构方向及替代方案见 [ADR-0002（提议）](adr/0002-initial-architecture-direction.md)。下图是目标方向，组件尚待实现：
+本项目拟从 Go 模块化单体起步，在同一服务中组织业务与后台任务，先用 Docker API 完成资源生命周期。架构方向及替代方案见 [ADR-0002（提议）](adr/0002-initial-architecture-direction.md)。下图是目标方向；目前仅实现 HTTP 基础与用户持久化：
 
 ```mermaid
 flowchart LR
@@ -53,7 +62,7 @@ flowchart LR
 
 已确定 HTTP 路由采用 [Chi](adr/0003-http-routing-with-chi.md)，浏览器认证采用 [服务端 Session + Cookie](adr/0004-server-side-browser-sessions.md)，资源授权采用 [RBAC 与资源归属约束](adr/0005-rbac-resource-authorization.md)。工作区访问按 [先 xterm.js 终端、后 IDE 集成](adr/0006-terminal-before-ide.md) 推进。以上决定均待实现。
 
-Go 为现有后端语言；前端优先 Vue + TypeScript，构建工具优先考虑 Vite；Docker Engine 是首个资源后端。持久化优先评估 PostgreSQL + pgx + sqlc，迁移工具建议 Goose。数据库相关工具、RBAC 实现库和前端具体依赖随功能实现确定，版本规则见 [本地开发](development.md)。
+Go 为现有后端语言；前端优先 Vue + TypeScript，构建工具优先考虑 Vite；Docker Engine 是首个资源后端。持久化已采用 [PostgreSQL + pgx + sqlc + Goose](adr/0007-postgresql-user-persistence.md)。RBAC 实现库和前端具体依赖随功能实现确定，版本规则见 [本地开发](development.md)。
 
 Session 管理登录身份和有效期，RBAC 根据角色判断动作权限，再按资源归属约束作用范围。授权规则集中在业务层，列表查询同样按可访问范围过滤。额度、并发限制和资源放置由资源管理与调度模块负责；终端握手及后续 IDE 访问复用资源授权规则，详见 [工作区访问设计](workspace-access.md)。
 

@@ -18,8 +18,11 @@ for arch in amd64 arm64; do
   CGO_ENABLED=0 GOOS=linux GOARCH="$arch" "$go_command" build \
     -trimpath -ldflags "-s -w -X main.version=$version" \
     -o "$build_dir/mini-coder" ./cmd/server
+  CGO_ENABLED=0 GOOS=linux GOARCH="$arch" "$go_command" build \
+    -trimpath -ldflags "-s -w" \
+    -o "$build_dir/mini-coder-migrate" ./cmd/migrate
   archive="mini-coder_${version}_linux_${arch}.tar.gz"
-  tar -czf "$output_dir/$archive" -C "$build_dir" mini-coder
+  tar -czf "$output_dir/$archive" -C "$build_dir" mini-coder mini-coder-migrate
   archives+=("$archive")
 done
 

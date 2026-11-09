@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/PazVz/mini_coder/internal/database"
 	"github.com/PazVz/mini_coder/internal/httpapi"
 )
 
@@ -36,17 +37,23 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	if err := run(ctx, *addr, logger); err != nil {
+	if err := run(ctx, *addr, os.Getenv("MINICODER_DATABASE_URL"), logger); err != nil {
 		logger.Error("server failed", "error", err)
 		os.Exit(1)
 	}
 }
 
-func run(ctx context.Context, addr string, logger *slog.Logger) error {
+func run(ctx context.Context, addr, databaseURL string, logger *slog.Logger) error {
 	listener, err := net.Listen("tcp", addr)
 	if err != nil {
 		return fmt.Errorf("listen on %s: %w", addr, err)
 	}
+	defer listener.Close()
+	pool, err := database.Open(ctx, databaseURL)
+	if err != nil {
+		return err
+	}
+	defer pool.Close()
 
 	server := &http.Server{
 		Handler:           httpapi.NewHandler(),

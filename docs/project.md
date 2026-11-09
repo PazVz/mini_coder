@@ -21,9 +21,9 @@
 
 ## 当前基础
 
-已具备 Go 服务、`/healthz`、优雅退出、单元与 HTTP 测试、Makefile、PR 标题检查、CI 和标签发布脚本。开发与交付方式见 [协作与发布](workflow.md)。
+已具备 Go 服务、`/healthz`、优雅退出、PostgreSQL 连接、Goose 迁移、sqlc 用户创建与查询、单元与数据库集成测试、Makefile、PR 标题检查、CI 和标签发布脚本。开发与交付方式见 [协作与发布](workflow.md)。
 
-数据库、认证授权、工作区业务和前端均尚未接入。
+用户 API、认证授权、工作区业务和前端尚未实现。下一步实现首次管理员初始化、密码认证与 Session + Cookie 登录闭环，再增加用户管理及 RBAC。
 
 ## 建议推进顺序
 

@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 )
@@ -14,8 +15,17 @@ import (
 func TestRunReportsListenError(t *testing.T) {
 	t.Parallel()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	if err := run(context.Background(), "invalid-address", logger); err == nil {
+	if err := run(context.Background(), "invalid-address", "", logger); err == nil {
 		t.Fatal("run succeeded with an invalid listen address")
+	}
+}
+
+func TestRunReportsDatabaseError(t *testing.T) {
+	t.Parallel()
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	err := run(t.Context(), "127.0.0.1:0", "", logger)
+	if err == nil || !strings.Contains(err.Error(), "MINICODER_DATABASE_URL") {
+		t.Fatalf("error = %v, want missing database configuration", err)
 	}
 }
 

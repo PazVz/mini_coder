@@ -19,6 +19,20 @@ jobs:
     name: Go CI
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:18.6-bookworm
+        env:
+          POSTGRES_USER: minicoder
+          POSTGRES_PASSWORD: minicoder
+          POSTGRES_DB: minicoder_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U minicoder -d minicoder_test"
+          --health-interval 2s --health-timeout 3s --health-retries 15
+    env:
+      MINICODER_TEST_DATABASE_URL: postgres://minicoder:minicoder@127.0.0.1:5432/minicoder_test?sslmode=disable
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -26,6 +40,6 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-          cache: false # No external Go modules yet.
-      - name: Check formatting, vet, test, and build
+          cache: true
+      - name: Check generated code, formatting, vet, tests, and build
         run: make check
