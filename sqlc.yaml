@@ -1,0 +1,17 @@
+version: "2"
+sql:
+  - engine: postgresql
+    schema: internal/database/migrations
+    queries: internal/database/queries
+    gen:
+      go:
+        package: dbgen
+        out: internal/database/dbgen
+        sql_package: pgx/v5
+        overrides:
+          - db_type: timestamptz
+            go_type:
+              import: time
+              type: Time
+          - column: users.password_hash
+            go_struct_tag: 'json:"-"'

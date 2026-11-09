@@ -16,7 +16,7 @@ git switch -c feat/workspace-api
 
 提交和合并流程：
 
-1. 完成实现及对应文档，检查差异。代码变更运行 `make check`；纯文档变更检查链接和内容，PR 中说明验证方式。
+1. 完成实现及对应文档，检查差异。代码变更按 [本地开发](development.md) 准备测试数据库并运行 `make check`；纯文档变更检查链接和内容，PR 中说明验证方式。
 2. 在本地校验实际 PR 标题，例如：`node .github/scripts/check-pr-title.cjs 'feat(workspace): add workspace creation'`。
 3. 提交、推送任务分支并创建目标为 `main` 的 PR，说明变更结果、验证命令与结果。
 4. 评审最终差异。更新代码或解决冲突后，重新验证受影响的内容。
@@ -64,7 +64,7 @@ make check
 make dist VERSION=v0.1.0
 ```
 
-示例版本按实际发布替换。产物位于 `dist/v0.1.0/`，包含 Linux amd64 / arm64 的 tar.gz 包和 `checksums.txt`。本地打包不会上传产物。
+示例版本按实际发布替换。产物位于 `dist/v0.1.0/`，包含 Linux amd64 / arm64 的 tar.gz 包和 `checksums.txt`。每个归档包含 `mini-coder` 服务与嵌入迁移 SQL 的 `mini-coder-migrate`。本地打包不会上传产物。
 
 在已合并且检查通过的 `main` 上创建并推送版本标签，触发现有发布工作流：
 
@@ -77,7 +77,7 @@ git push origin v0.1.0
 
 工作流要求标签提交已进入远程 `main`，重新执行 `make check`，打包并生成 Release notes、上传附件。它使用 `GITHUB_TOKEN`，无需额外 PAT。每次正式发布使用新标签，保留已发布标签指向的提交。
 
-下载发布包后，在同一目录使用 `sha256sum --check checksums.txt --ignore-missing` 验证文件，再解压运行 `mini-coder`。
+下载发布包后，在同一目录使用 `sha256sum --check checksums.txt --ignore-missing` 验证文件。解压后导出 `MINICODER_DATABASE_URL`，先执行 `./mini-coder-migrate up`，再运行 `./mini-coder`。
 
 ## 后续自动化
 

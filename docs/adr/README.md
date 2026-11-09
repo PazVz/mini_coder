@@ -10,6 +10,7 @@ ADR 记录会影响后续工作的选择及原因，例如架构边界、数据�
 | [0004](0004-server-side-browser-sessions.md) | 浏览器采用服务端 Session + Cookie | 已采纳，待实现 |
 | [0005](0005-rbac-resource-authorization.md) | 使用 RBAC 与资源归属约束管理资源访问 | 已采纳，待实现 |
 | [0006](0006-terminal-before-ide.md) | 先实现 xterm.js 终端，后续集成浏览器 IDE | 已采纳，待实现 |
+| [0007](0007-postgresql-user-persistence.md) | PostgreSQL 与最小用户持久化 | 已采纳，已实现 |
 
 ## 使用方式
 
