@@ -67,6 +67,10 @@ func run(ctx context.Context, addr, databaseURL string, logger *slog.Logger) err
 	if err != nil {
 		return err
 	}
+	emailService, err := newEmailService(authService, logger)
+	if err != nil {
+		return err
+	}
 	cleanupCtx, stopCleanup := context.WithCancel(ctx)
 	cleanupDone := make(chan struct{})
 	go func() {
@@ -80,9 +84,12 @@ func run(ctx context.Context, addr, databaseURL string, logger *slog.Logger) err
 			case <-ticker.C:
 				queryCtx, cancel := context.WithTimeout(cleanupCtx, 30*time.Second)
 				cleanupErr := authService.DeleteExpiredSessions(queryCtx)
+				if cleanupErr == nil {
+					cleanupErr = emailService.DeleteExpiredEmailState(queryCtx)
+				}
 				cancel()
 				if cleanupErr != nil && cleanupCtx.Err() == nil {
-					logger.Error("clean up expired sessions", "error", cleanupErr)
+					logger.Error("clean up expired authentication state", "error", cleanupErr)
 				}
 			}
 		}
@@ -97,6 +104,7 @@ func run(ctx context.Context, addr, databaseURL string, logger *slog.Logger) err
 		Handler: httpapi.NewHandler(httpapi.Config{
 			Auth:         authService,
 			Users:        authService,
+			Emails:       emailService,
 			Logger:       logger,
 			CookieSecure: secure,
 		}),

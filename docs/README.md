@@ -8,6 +8,7 @@
 | [架构草案](architecture.md) | 当前有哪些模块，目标职责如何划分，参考 Coder 的哪些部分？ |
 | [工作区访问设计](workspace-access.md) | 实时终端如何先落地，Session 与 RBAC 如何控制访问，后续怎样接入 IDE？ |
 | [认证 API](auth-api.md) | 如何初始化管理员、登录、修改密码与退出，主邮箱、失败响应和 Cookie 有哪些约定？ |
+| [邮箱 API](email-api.md) | 如何配置 SMTP、先验证再注册、验证及替换主邮箱，令牌和配额如何工作？ |
 | [用户管理 API](users-api.md) | 管理员如何创建、查询、启停用户和调整角色，权限变化何时生效？ |
 | [本地开发](development.md) | 如何运行、配置和验证项目，怎样管理版本？ |
 | [协作与发布](workflow.md) | 如何提交、验证、合并 PR 和发布版本？ |

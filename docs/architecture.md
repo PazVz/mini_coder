@@ -2,18 +2,19 @@
 
 ## 当前实现
 
-当前程序是使用 Chi 路由的单进程 HTTP 服务，已接入 PostgreSQL、版本化迁移、用户与会话持久化，完成首次管理员初始化、密码认证、主邮箱资料、修改密码、管理员用户管理和固定角色授权。工作区归属授权、Docker 资源管理和前端待实现。
+当前程序是使用 Chi 路由的单进程 HTTP 服务，已接入 PostgreSQL、版本化迁移、用户与会话持久化，完成首次管理员初始化、密码认证、主邮箱验证与维护、先验证邮箱再注册、修改密码、管理员用户管理和固定角色授权。当前有内嵌的注册与邮件确认页；工作区归属授权、Docker 资源管理和 Vue 界面待实现。
 
 ```text
 cmd/server/                  进程入口、配置、信号处理和优雅退出
 cmd/migrate/                 独立迁移命令，支持 up / down / status
 internal/httpapi/            Chi 路由、统一失败响应、Cookie、CSRF 与限流
-internal/auth/               账号与邮箱资料、初始化、Argon2id 密码认证、修改密码与会话业务
+internal/auth/               账号、注册、邮件证明、密码认证、修改密码与会话业务
+internal/mailer/             有超时和 TLS 校验的 SMTP 投递
 internal/authz/              内置角色到用户管理权限的固定映射
 internal/testutil/           集成测试专用的独立数据库 schema
 internal/database/           pgx 连接池、嵌入式 Goose 迁移与集成测试
   migrations/                表结构迁移 SQL
-  queries/                   用户、角色、初始化与会话 SQL
+  queries/                   用户、角色、初始化、会话与邮件证明 SQL
   dbgen/                     sqlc 生成的模型与查询方法
 compose.yaml                 本地 PostgreSQL 服务及持久化卷
 sqlc.yaml                    SQL 到 Go 的生成配置
@@ -29,7 +30,9 @@ docs/                       项目指南、架构与决策记录
 
 追踪用户管理时，按 `httpapi/users.go` → `auth/users.go` → `authz/authorization.go` 与 `database/queries/user_management.sql` 阅读。业务层读取当前操作者权限，管理写事务先锁定 `migrations/00003_user_management.sql` 创建的单例行，再判断权限和剩余管理员。列表按 ID 游标分页；并发保护、事务回滚和 Cookie 闭环测试在 `auth/users*_integration_test.go`。具体规则见 [ADR-0009](adr/0009-user-management-and-authorization.md) 和 [用户管理 API](users-api.md)。
 
-主邮箱输入在 `auth/email.go` 校验，数据库生成大小写不敏感的 `email_key` 并执行唯一约束；旧账号邮箱允许为空，`email_verified_at` 独立记录验证状态。`password_hash` 允许为空以兼容未来外部登录。SMTP、邮箱自助补录与修改、先验证邮箱再注册和 OIDC 尚未实现，边界见 [ADR-0010](adr/0010-primary-email-and-password-change.md)。
+主邮箱输入在 `auth/email.go` 校验，数据库生成大小写不敏感的 `email_key` 并执行唯一约束；旧账号邮箱允许为空，`email_verified_at` 独立记录验证状态。`password_hash` 允许为空以兼容未来外部登录。邮箱模型与无密码兼容见 [ADR-0010](adr/0010-primary-email-and-password-change.md)。
+
+邮件流程按 `httpapi/email.go` → `auth/email_workflows.go` → `database/queries/email.sql` 阅读。业务通过 `mailer.SMTP` 发信，数据库保存有用途和期限的令牌哈希及共享邮箱配额；消费和用户写入在同一事务完成。`migrations/00005_email_verification.sql` 定义证明表和敏感变更时的失效触发器。HTTP 包嵌入最小注册、确认页，令牌放在 URL fragment，GET 不消费。设计见 [ADR-0011](adr/0011-smtp-email-verification-and-registration.md)，配置和端点见 [邮箱 API](email-api.md)。密码找回和 OIDC 待实现。
 
 数据层从 `migrations/00001_create_users.sql` 和 `queries/users.sql` 开始阅读。`database.Open` 创建连接池并验证连接；`dbgen.New(pool)` 提供用户创建和查询，`WithTx` 支持事务。`cmd/migrate` 通过 Goose 执行嵌入的迁移，HTTP 服务不自动修改表结构。`/healthz`、`/api/v1/auth` 与 `/api/v1/users` 都使用 Chi。HTTP 层通过小接口调用 `auth.Service`，统一映射业务错误；业务层使用 sqlc 和 pgx 事务，密码哈希与会话令牌不进入用户响应。用户基础规则见 [ADR-0007](adr/0007-postgresql-user-persistence.md)，认证模型、并发规则及错误格式见 [ADR-0008](adr/0008-authentication-and-http-errors.md)，接口见 [认证 API](auth-api.md)。
 

@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>注册 · mini_coder</title>
+  <link rel="stylesheet" href="/auth/email.css">
+  <script src="/auth/email.js" defer></script>
+</head>
+<body data-flow="register">
+  <main>
+    <p class="brand">mini_coder</p>
+    <h1>创建账号</h1>
+    <p id="intro">先验证你的邮箱，再设置用户名和密码。</p>
+    <form id="request-form" hidden>
+      <label for="email">主邮箱</label>
+      <input id="email" name="email" type="email" autocomplete="email" maxlength="254" required>
+      <button type="submit">发送验证邮件</button>
+    </form>
+    <form id="register-form" hidden>
+      <label for="username">用户名</label>
+      <input id="username" name="username" autocomplete="username" minlength="3" maxlength="32" pattern="[a-z0-9][a-z0-9_-]{2,31}" required>
+      <p class="hint">3～32 位小写字母、数字、下划线或连字符，以字母或数字开头。</p>
+      <label for="password">密码</label>
+      <input id="password" name="password" type="password" autocomplete="new-password" minlength="12" required>
+      <p class="hint">至少 12 个字符。</p>
+      <button type="submit">完成注册</button>
+    </form>
+    <p id="status" role="status" aria-live="polite"></p>
+    <noscript>请启用 JavaScript 以完成注册。</noscript>
+  </main>
+</body>
+</html>

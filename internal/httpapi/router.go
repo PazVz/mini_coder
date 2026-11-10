@@ -30,10 +30,20 @@ type UserManager interface {
 	UpdateUserRole(context.Context, int64, int64, string) (auth.User, error)
 }
 
+// EmailManager owns mailbox proofs, primary address changes and public registration.
+type EmailManager interface {
+	RequestRegistration(context.Context, string) error
+	Register(context.Context, auth.RegistrationInput) (auth.User, error)
+	RequestEmailVerification(context.Context, int64, string) error
+	RequestEmailChange(context.Context, int64, string, auth.EmailChange) error
+	ConfirmEmail(context.Context, int64, string, string) (auth.User, error)
+}
+
 // Config supplies the account services, request logger and cookie security policy.
 type Config struct {
 	Auth         Authenticator
 	Users        UserManager
+	Emails       EmailManager
 	Logger       *slog.Logger
 	CookieSecure bool
 }
@@ -41,6 +51,7 @@ type Config struct {
 type api struct {
 	auth         Authenticator
 	users        UserManager
+	emails       EmailManager
 	logger       *slog.Logger
 	cookieSecure bool
 }
@@ -54,6 +65,7 @@ func NewHandler(config Config) http.Handler {
 	a := &api{
 		auth:         config.Auth,
 		users:        config.Users,
+		emails:       config.Emails,
 		logger:       logger,
 		cookieSecure: config.CookieSecure,
 	}
@@ -88,6 +100,12 @@ func NewHandler(config Config) http.Handler {
 	})
 	router.Get("/healthz", healthz)
 	router.Head("/healthz", healthz)
+	router.Get("/auth/register", registrationPage)
+	router.Head("/auth/register", registrationPage)
+	router.Get("/auth/email/confirm", emailConfirmationPage)
+	router.Head("/auth/email/confirm", emailConfirmationPage)
+	router.Get("/auth/email.js", emailScript)
+	router.Get("/auth/email.css", emailStyle)
 	limit := newAttemptLimiter(time.Now)
 	router.Route("/api/v1/auth", func(router chi.Router) {
 		router.Use(noStore)
@@ -97,6 +115,11 @@ func NewHandler(config Config) http.Handler {
 		router.With(a.requireUser).Get("/me", a.me)
 		router.With(a.requireUser, limit.middleware).Post("/password", a.changePassword)
 		router.Post("/logout", a.logout)
+		router.With(a.requireEmails, limit.middleware).Post("/register/request", a.requestRegistration)
+		router.With(a.requireEmails, limit.middleware).Post("/register", a.register)
+		router.With(a.requireUser, a.requireEmails, limit.middleware).Post("/email/verification", a.requestEmailVerification)
+		router.With(a.requireUser, a.requireEmails, limit.middleware).Post("/email/change", a.requestEmailChange)
+		router.With(a.requireUser, a.requireEmails, limit.middleware).Post("/email/confirm", a.confirmEmail)
 	})
 	router.Route("/api/v1/users", func(router chi.Router) {
 		router.Use(noStore, a.requireUser)
