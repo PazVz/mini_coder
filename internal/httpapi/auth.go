@@ -3,6 +3,7 @@ package httpapi
 import (
 	"errors"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/PazVz/mini_coder/internal/auth"
@@ -117,6 +118,24 @@ func (a *api) serviceError(w http.ResponseWriter, r *http.Request, err error) {
 		return
 	}
 	switch {
+	case errors.Is(err, auth.ErrEmailUnavailable):
+		writeError(w, r, http.StatusServiceUnavailable, "email_unavailable", "邮件服务尚未配置")
+	case errors.Is(err, auth.ErrEmailDelivery):
+		writeError(w, r, http.StatusServiceUnavailable, "email_delivery_failed", "邮件发送失败，请稍后重新申请")
+	case errors.Is(err, auth.ErrRegistrationDisabled):
+		writeError(w, r, http.StatusForbidden, "registration_disabled", "暂未开放注册")
+	case errors.Is(err, auth.ErrInvalidEmailToken):
+		writeError(w, r, http.StatusBadRequest, "invalid_email_token", "验证链接无效或已过期，请重新申请")
+	case errors.Is(err, auth.ErrEmailRateLimited):
+		var limit *auth.EmailRateLimitError
+		if errors.As(err, &limit) {
+			w.Header().Set("Retry-After", strconv.Itoa(int(limit.RetryAfter)))
+		}
+		writeError(w, r, http.StatusTooManyRequests, "rate_limited", "邮件申请过于频繁，请稍后重试")
+	case errors.Is(err, auth.ErrEmailAlreadyVerified):
+		writeError(w, r, http.StatusConflict, "email_already_verified", "当前邮箱已验证")
+	case errors.Is(err, auth.ErrEmailMissing):
+		writeError(w, r, http.StatusConflict, "email_missing", "请先申请补录主邮箱")
 	case errors.Is(err, authz.ErrForbidden):
 		writeError(w, r, http.StatusForbidden, "forbidden", "没有执行此操作的权限")
 	case errors.Is(err, auth.ErrUserNotFound):

@@ -26,7 +26,9 @@ func TestEmailMigrationPreservesExistingAccounts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	migrateUp(t, provider)
+	if _, err := provider.UpTo(ctx, 4); err != nil {
+		t.Fatal(err)
+	}
 	queries := dbgen.New(pool)
 	user, err := queries.GetAuthUserByUsername(ctx, "legacy")
 	if err != nil {
@@ -93,6 +95,10 @@ func TestEmailUniquenessAndCredentialConstraints(t *testing.T) {
 	assertPostgresError(t, err, "23514", "users_email_verification")
 	_, err = pool.Exec(ctx, "UPDATE users SET password_hash='' WHERE id=$1", user.ID)
 	assertPostgresError(t, err, "23514", "users_password_hash_nonempty")
+	// Remove the verification migration before testing the primary-email downgrade.
+	if _, err := provider.Down(ctx); err != nil {
+		t.Fatal(err)
+	}
 	// A nullable credential represents an absent password; downgrade must fail atomically.
 	if _, err := provider.Down(ctx); err == nil {
 		t.Fatal("downgrade accepted passwordless accounts")

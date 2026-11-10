@@ -12,7 +12,7 @@ type attemptWindow struct {
 	count int
 }
 
-// attemptLimiter shares attempt counts and in-flight slots between setup, login and user creation.
+// attemptLimiter shares attempts and in-flight slots between password and email operations.
 type attemptLimiter struct {
 	mu     sync.Mutex
 	peers  map[string]attemptWindow

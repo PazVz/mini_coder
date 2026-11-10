@@ -1,0 +1,13 @@
+:root { color-scheme: light dark; font-family: system-ui, sans-serif; }
+body { margin: 0; padding: 2rem 1rem; }
+main { max-width: 28rem; margin: 8vh auto; }
+.brand { font-weight: 650; letter-spacing: .03em; }
+h1 { margin-bottom: .75rem; }
+p { line-height: 1.65; }
+label { display: block; margin-top: 1.25rem; }
+input, button { box-sizing: border-box; width: 100%; padding: .8rem; font: inherit; border-radius: .4rem; }
+input { margin-top: .4rem; border: 1px solid #888; }
+button { margin-top: 1.5rem; border: 0; background: #315ecb; color: white; cursor: pointer; }
+button:disabled { opacity: .6; cursor: wait; }
+.hint { font-size: .85rem; opacity: .75; margin: .4rem 0; }
+#status { min-height: 1.65em; overflow-wrap: anywhere; }

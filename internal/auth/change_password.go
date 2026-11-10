@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"unicode/utf8"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/PazVz/mini_coder/internal/database/dbgen"
@@ -52,32 +51,11 @@ func validatePasswordChange(change PasswordChange) error {
 // userID comes from the authenticated HTTP context; the session is rechecked under the
 // same user row lock used by Login, including after waiting for another password change.
 func (s *Service) ChangePassword(ctx context.Context, userID int64, token string, change PasswordChange) error {
-	if !validToken(token) {
-		return ErrUnauthenticated
-	}
-	tx, err := s.pool.Begin(ctx)
+	tx, queries, user, err := s.beginAccountChange(ctx, userID, token)
 	if err != nil {
-		return fmt.Errorf("begin password change: %w", err)
+		return err
 	}
 	defer tx.Rollback(context.Background())
-	queries := s.queries.WithTx(tx)
-	user, err := queries.LockAuthUserByID(ctx, userID)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return ErrUnauthenticated
-	}
-	if err != nil {
-		return fmt.Errorf("lock password user: %w", err)
-	}
-	sessionUser, err := queries.GetSessionUser(ctx, tokenHash(token))
-	if errors.Is(err, pgx.ErrNoRows) {
-		return ErrUnauthenticated
-	}
-	if err != nil {
-		return fmt.Errorf("recheck password session: %w", err)
-	}
-	if sessionUser.ID != user.ID {
-		return ErrUnauthenticated
-	}
 	if err := validatePasswordChange(change); err != nil {
 		return err
 	}
