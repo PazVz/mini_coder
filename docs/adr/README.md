@@ -13,6 +13,7 @@ ADR 记录会影响后续工作的选择及原因，例如架构边界、数据�
 | [0007](0007-postgresql-user-persistence.md) | PostgreSQL 与最小用户持久化 | 已采纳，已实现 |
 | [0008](0008-authentication-and-http-errors.md) | 密码认证、持久化会话与统一 HTTP 失败响应 | 已采纳，已实现 |
 | [0009](0009-user-management-and-authorization.md) | 用户管理、固定角色授权与管理员保底 | 已采纳，已实现 |
+| [0010](0010-primary-email-and-password-change.md) | 主邮箱、可选本地密码与密码修改 | 已采纳，基础已实现；邮件验证、注册和 OIDC 待实现 |
 
 ## 使用方式
 

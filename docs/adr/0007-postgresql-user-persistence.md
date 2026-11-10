@@ -1,7 +1,7 @@
 # ADR-0007：PostgreSQL 与最小用户持久化
 
 - 日期：2026-11-07
-- 状态：已采纳
+- 状态：已采纳；主邮箱与可选本地密码由 [ADR-0010](0010-primary-email-and-password-change.md) 扩展
 
 ## 背景
 

@@ -8,6 +8,8 @@ package dbgen
 import (
 	"context"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const completeSetup = `-- name: CompleteSetup :exec
@@ -56,18 +58,21 @@ func (q *Queries) DeleteSession(ctx context.Context, tokenHash []byte) error {
 }
 
 const getAuthUserByUsername = `-- name: GetAuthUserByUsername :one
-SELECT u.id, u.username, u.password_hash, u.status, u.created_at, u.updated_at, r.role FROM users u JOIN user_roles r ON r.user_id = u.id
+SELECT u.id, u.username, u.password_hash, u.status, u.created_at, u.updated_at, u.email, u.email_key, u.email_verified_at, r.role FROM users u JOIN user_roles r ON r.user_id = u.id
 WHERE u.username = $1
 `
 
 type GetAuthUserByUsernameRow struct {
-	ID           int64
-	Username     string
-	PasswordHash string `json:"-"`
-	Status       string
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
-	Role         string
+	ID              int64
+	Username        string
+	PasswordHash    pgtype.Text `json:"-"`
+	Status          string
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+	Email           pgtype.Text
+	EmailKey        pgtype.Text
+	EmailVerifiedAt pgtype.Timestamptz
+	Role            string
 }
 
 func (q *Queries) GetAuthUserByUsername(ctx context.Context, username string) (GetAuthUserByUsernameRow, error) {
@@ -80,25 +85,30 @@ func (q *Queries) GetAuthUserByUsername(ctx context.Context, username string) (G
 		&i.Status,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Email,
+		&i.EmailKey,
+		&i.EmailVerifiedAt,
 		&i.Role,
 	)
 	return i, err
 }
 
 const getSessionUser = `-- name: GetSessionUser :one
-SELECT u.id, u.username, u.status, u.created_at, u.updated_at, r.role
+SELECT u.id, u.username, u.email, u.email_verified_at, u.status, u.created_at, u.updated_at, r.role
 FROM sessions s JOIN users u ON u.id = s.user_id
 JOIN user_roles r ON r.user_id = u.id
-WHERE s.token_hash = $1 AND s.expires_at > now() AND u.status = 'active'
+WHERE s.token_hash = $1 AND s.expires_at > clock_timestamp() AND u.status = 'active'
 `
 
 type GetSessionUserRow struct {
-	ID        int64
-	Username  string
-	Status    string
-	CreatedAt time.Time
-	UpdatedAt time.Time
-	Role      string
+	ID              int64
+	Username        string
+	Email           pgtype.Text
+	EmailVerifiedAt pgtype.Timestamptz
+	Status          string
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+	Role            string
 }
 
 func (q *Queries) GetSessionUser(ctx context.Context, tokenHash []byte) (GetSessionUserRow, error) {
@@ -107,6 +117,8 @@ func (q *Queries) GetSessionUser(ctx context.Context, tokenHash []byte) (GetSess
 	err := row.Scan(
 		&i.ID,
 		&i.Username,
+		&i.Email,
+		&i.EmailVerifiedAt,
 		&i.Status,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -127,18 +139,21 @@ func (q *Queries) GetSetupState(ctx context.Context) (bool, error) {
 }
 
 const lockAuthUserByID = `-- name: LockAuthUserByID :one
-SELECT u.id, u.username, u.password_hash, u.status, u.created_at, u.updated_at, r.role FROM users u JOIN user_roles r ON r.user_id = u.id
+SELECT u.id, u.username, u.password_hash, u.status, u.created_at, u.updated_at, u.email, u.email_key, u.email_verified_at, r.role FROM users u JOIN user_roles r ON r.user_id = u.id
 WHERE u.id = $1 FOR UPDATE OF u
 `
 
 type LockAuthUserByIDRow struct {
-	ID           int64
-	Username     string
-	PasswordHash string `json:"-"`
-	Status       string
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
-	Role         string
+	ID              int64
+	Username        string
+	PasswordHash    pgtype.Text `json:"-"`
+	Status          string
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+	Email           pgtype.Text
+	EmailKey        pgtype.Text
+	EmailVerifiedAt pgtype.Timestamptz
+	Role            string
 }
 
 func (q *Queries) LockAuthUserByID(ctx context.Context, id int64) (LockAuthUserByIDRow, error) {
@@ -151,6 +166,9 @@ func (q *Queries) LockAuthUserByID(ctx context.Context, id int64) (LockAuthUserB
 		&i.Status,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Email,
+		&i.EmailKey,
+		&i.EmailVerifiedAt,
 		&i.Role,
 	)
 	return i, err
@@ -173,5 +191,19 @@ UPDATE user_roles SET role = 'admin' WHERE user_id = $1
 
 func (q *Queries) SetAdminRole(ctx context.Context, userID int64) error {
 	_, err := q.db.Exec(ctx, setAdminRole, userID)
+	return err
+}
+
+const updatePassword = `-- name: UpdatePassword :exec
+UPDATE users SET password_hash = $2, updated_at = clock_timestamp() WHERE id = $1
+`
+
+type UpdatePasswordParams struct {
+	ID           int64
+	PasswordHash pgtype.Text `json:"-"`
+}
+
+func (q *Queries) UpdatePassword(ctx context.Context, arg UpdatePasswordParams) error {
+	_, err := q.db.Exec(ctx, updatePassword, arg.ID, arg.PasswordHash)
 	return err
 }

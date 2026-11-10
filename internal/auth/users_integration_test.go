@@ -18,10 +18,7 @@ import (
 
 func createMember(t *testing.T, service *auth.Service, adminID int64, username string) auth.User {
 	t.Helper()
-	user, err := service.CreateUser(t.Context(), adminID, auth.Credentials{
-		Username: username,
-		Password: credentials.Password,
-	})
+	user, err := service.CreateUser(t.Context(), adminID, newUserInput(username))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -42,10 +39,10 @@ func TestUserCreationAndPagination(t *testing.T) {
 	if _, err := service.Login(t.Context(), auth.Credentials{Username: "alice", Password: credentials.Password}); err != nil {
 		t.Fatalf("new member cannot log in: %v", err)
 	}
-	if _, err := service.CreateUser(t.Context(), admin.ID, auth.Credentials{Username: "alice", Password: credentials.Password}); !errors.Is(err, auth.ErrUsernameTaken) {
+	if _, err := service.CreateUser(t.Context(), admin.ID, newUserInput("alice")); !errors.Is(err, auth.ErrUsernameTaken) {
 		t.Fatalf("duplicate username = %v, want ErrUsernameTaken", err)
 	}
-	_, err := service.CreateUser(t.Context(), admin.ID, auth.Credentials{
+	_, err := service.CreateUser(t.Context(), admin.ID, auth.CreateUserInput{
 		Username: "Bad Name",
 		Password: "short",
 	})
@@ -110,7 +107,7 @@ func TestUserManagementPermissionsAndValidation(t *testing.T) {
 		run  func(int64) error
 	}{
 		{"create", func(actor int64) error {
-			_, err := service.CreateUser(t.Context(), actor, auth.Credentials{Username: "another", Password: credentials.Password})
+			_, err := service.CreateUser(t.Context(), actor, newUserInput("another"))
 			return err
 		}},
 		{"list", func(actor int64) error {
@@ -363,7 +360,7 @@ func TestQueuedManagementRechecksActor(t *testing.T) {
 			}
 			result := make(chan error, 1)
 			go func() {
-				_, err := service.CreateUser(t.Context(), actor.ID, auth.Credentials{Username: "should-not-exist", Password: credentials.Password})
+				_, err := service.CreateUser(t.Context(), actor.ID, newUserInput("should-not-exist"))
 				result <- err
 			}()
 			waitForManagementWaiters(t, pool, 1)

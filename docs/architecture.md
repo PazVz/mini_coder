@@ -2,13 +2,13 @@
 
 ## 当前实现
 
-当前程序是使用 Chi 路由的单进程 HTTP 服务，已接入 PostgreSQL、版本化迁移、用户与会话持久化，完成首次管理员初始化、密码认证、管理员用户管理和固定角色授权。工作区归属授权、Docker 资源管理和前端待实现。
+当前程序是使用 Chi 路由的单进程 HTTP 服务，已接入 PostgreSQL、版本化迁移、用户与会话持久化，完成首次管理员初始化、密码认证、主邮箱资料、修改密码、管理员用户管理和固定角色授权。工作区归属授权、Docker 资源管理和前端待实现。
 
 ```text
 cmd/server/                  进程入口、配置、信号处理和优雅退出
 cmd/migrate/                 独立迁移命令，支持 up / down / status
 internal/httpapi/            Chi 路由、统一失败响应、Cookie、CSRF 与限流
-internal/auth/               账号管理、初始化、Argon2id 密码认证与会话业务
+internal/auth/               账号与邮箱资料、初始化、Argon2id 密码认证、修改密码与会话业务
 internal/authz/              内置角色到用户管理权限的固定映射
 internal/testutil/           集成测试专用的独立数据库 schema
 internal/database/           pgx 连接池、嵌入式 Goose 迁移与集成测试
@@ -25,9 +25,11 @@ docs/                       项目指南、架构与决策记录
 
 阅读代码时先看 `internal/httpapi/router.go` 及测试，再看 `cmd/server/main.go`。
 
-追踪认证时，按 `httpapi/auth.go` → `auth/service.go` → `database/queries/auth.sql` 阅读：HTTP 层解析凭据并处理 Cookie，业务层组织事务，SQL 检查会话过期和用户状态。账号停用时的会话撤销位于 `migrations/00002_auth.sql` 的 `users_revoke_sessions` 触发器，与登录时的用户行锁共同保证并发行为；对应测试在 `auth/auth_integration_test.go`。
+追踪认证时，按 `httpapi/auth.go` → `auth/service.go` → `database/queries/auth.sql` 阅读：HTTP 层解析凭据并处理 Cookie，业务层组织事务，SQL 检查会话过期和用户状态。账号停用或密码变化时，`users_revoke_sessions` 触发器撤销全部会话，最新定义位于 `migrations/00004_email_and_password.sql`。`auth/change_password.go` 在用户行锁内重新检查会话并更新密码；登录使用同一用户行锁，防止旧凭据并发创建有效会话。对应测试在 `auth/auth_integration_test.go` 和 `auth/account_integration_test.go`。
 
 追踪用户管理时，按 `httpapi/users.go` → `auth/users.go` → `authz/authorization.go` 与 `database/queries/user_management.sql` 阅读。业务层读取当前操作者权限，管理写事务先锁定 `migrations/00003_user_management.sql` 创建的单例行，再判断权限和剩余管理员。列表按 ID 游标分页；并发保护、事务回滚和 Cookie 闭环测试在 `auth/users*_integration_test.go`。具体规则见 [ADR-0009](adr/0009-user-management-and-authorization.md) 和 [用户管理 API](users-api.md)。
+
+主邮箱输入在 `auth/email.go` 校验，数据库生成大小写不敏感的 `email_key` 并执行唯一约束；旧账号邮箱允许为空，`email_verified_at` 独立记录验证状态。`password_hash` 允许为空以兼容未来外部登录。SMTP、邮箱自助补录与修改、先验证邮箱再注册和 OIDC 尚未实现，边界见 [ADR-0010](adr/0010-primary-email-and-password-change.md)。
 
 数据层从 `migrations/00001_create_users.sql` 和 `queries/users.sql` 开始阅读。`database.Open` 创建连接池并验证连接；`dbgen.New(pool)` 提供用户创建和查询，`WithTx` 支持事务。`cmd/migrate` 通过 Goose 执行嵌入的迁移，HTTP 服务不自动修改表结构。`/healthz`、`/api/v1/auth` 与 `/api/v1/users` 都使用 Chi。HTTP 层通过小接口调用 `auth.Service`，统一映射业务错误；业务层使用 sqlc 和 pgx 事务，密码哈希与会话令牌不进入用户响应。用户基础规则见 [ADR-0007](adr/0007-postgresql-user-persistence.md)，认证模型、并发规则及错误格式见 [ADR-0008](adr/0008-authentication-and-http-errors.md)，接口见 [认证 API](auth-api.md)。
 

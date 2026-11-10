@@ -1,7 +1,7 @@
 # ADR-0008：密码认证、持久化会话与统一 HTTP 失败响应
 
 - 日期：2026-11-09
-- 状态：已采纳，已实现；用户管理、角色授权及哈希限流范围由 [ADR-0009](0009-user-management-and-authorization.md) 扩展
+- 状态：已采纳，已实现；用户管理、角色授权由 [ADR-0009](0009-user-management-and-authorization.md) 扩展，邮箱与修改密码由 [ADR-0010](0010-primary-email-and-password-change.md) 扩展
 
 ## 背景
 

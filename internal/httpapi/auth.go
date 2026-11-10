@@ -34,11 +34,11 @@ func (a *api) setupStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *api) setup(w http.ResponseWriter, r *http.Request) {
-	credentials, ok := readJSON[auth.Credentials](w, r)
+	input, ok := readJSON[auth.CreateUserInput](w, r)
 	if !ok {
 		return
 	}
-	user, err := a.auth.Setup(r.Context(), r.Header.Get("X-Setup-Token"), credentials)
+	user, err := a.auth.Setup(r.Context(), r.Header.Get("X-Setup-Token"), input)
 	if err != nil {
 		a.serviceError(w, r, err)
 		return
@@ -62,6 +62,20 @@ func (a *api) login(w http.ResponseWriter, r *http.Request) {
 
 func (a *api) logout(w http.ResponseWriter, r *http.Request) {
 	if err := a.auth.Logout(r.Context(), sessionToken(r)); err != nil {
+		a.serviceError(w, r, err)
+		return
+	}
+	http.SetCookie(w, a.cookie("", time.Unix(1, 0), -1))
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (a *api) changePassword(w http.ResponseWriter, r *http.Request) {
+	change, ok := readJSON[auth.PasswordChange](w, r)
+	if !ok {
+		return
+	}
+	user := r.Context().Value(userKey{}).(auth.User)
+	if err := a.auth.ChangePassword(r.Context(), user.ID, sessionToken(r), change); err != nil {
 		a.serviceError(w, r, err)
 		return
 	}
@@ -117,6 +131,12 @@ func (a *api) serviceError(w http.ResponseWriter, r *http.Request, err error) {
 		writeError(w, r, http.StatusConflict, "already_initialized", "管理员初始化已完成")
 	case errors.Is(err, auth.ErrUsernameTaken):
 		writeError(w, r, http.StatusConflict, "username_taken", "用户名已存在")
+	case errors.Is(err, auth.ErrEmailTaken):
+		writeError(w, r, http.StatusConflict, "email_taken", "邮箱已被使用")
+	case errors.Is(err, auth.ErrInvalidCurrentPassword):
+		writeError(w, r, http.StatusForbidden, "invalid_current_password", "当前密码错误")
+	case errors.Is(err, auth.ErrPasswordNotSet):
+		writeError(w, r, http.StatusConflict, "password_not_set", "账号没有本地密码")
 	case errors.Is(err, auth.ErrSetupDisabled):
 		writeError(w, r, http.StatusForbidden, "setup_disabled", "管理员初始化未启用")
 	case errors.Is(err, auth.ErrSetupForbidden):

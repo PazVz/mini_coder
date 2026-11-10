@@ -6,14 +6,14 @@
 
 | 方法与路径 | 输入 | 成功结果 |
 | --- | --- | --- |
-| `POST /api/v1/users` | `username`、`password` JSON | 201，新用户，默认 active/member |
+| `POST /api/v1/users` | `username`、`email`、`password` JSON | 201，新用户，默认 active/member |
 | `GET /api/v1/users` | 可选 `after_id`、`limit` 查询参数 | 200，用户分页结果 |
 | `PATCH /api/v1/users/{id}/status` | `{"status":"active"}` 或 `{"status":"disabled"}` | 200，更新后的用户 |
 | `PATCH /api/v1/users/{id}/role` | `{"role":"admin"}` 或 `{"role":"member"}` | 200，更新后的用户 |
 
-用户字段与认证响应一致：`id`、`username`、`status`、`role`、`created_at`、`updated_at`。ID 使用十进制字符串，时间使用 RFC 3339，不返回密码哈希或会话令牌。
+用户字段与认证响应一致：`id`、`username`、`email`、`email_verified`、`status`、`role`、`created_at`、`updated_at`。ID 使用十进制字符串，时间使用 RFC 3339，不返回密码哈希或会话令牌。
 
-写接口接受 `Content-Type: application/json`，请求体为单个对象，最多 16 KiB；拒绝未知字段。创建时指定 role 或 status 会被拒绝。用户名与密码规则沿用认证 API，用户名冲突返回 409。路径 ID 须为正的 int64 范围整数；格式错误返回 400，有效 ID 对应的用户不存在返回 404。
+写接口接受 `Content-Type: application/json`，请求体为单个对象，最多 16 KiB；拒绝未知字段。创建时指定 role、status 或邮箱验证状态会被拒绝。用户名、邮箱与密码规则沿用认证 API，用户名或邮箱冲突返回 409。邮箱必填且初始未验证；邮箱自助维护随后续验证流程一起开放。路径 ID 须为正的 int64 范围整数；格式错误返回 400，有效 ID 对应的用户不存在返回 404。
 
 PATCH 仅修改路径指定的字段，不是通用 JSON Patch。字段缺失、null、空字符串或枚举值不合法均返回 400。相同值重复请求返回当前用户，保持更新时间不变；实际修改同步更新 `updated_at`。
 
@@ -27,6 +27,8 @@ PATCH 仅修改路径指定的字段，不是通用 JSON Patch。字段缺失、
     {
       "id": "1",
       "username": "admin",
+      "email": "admin@example.com",
+      "email_verified": false,
       "status": "active",
       "role": "admin",
       "created_at": "2026-11-09T00:00:00Z",
@@ -45,7 +47,7 @@ PATCH 仅修改路径指定的字段，不是通用 JSON Patch。字段缺失、
 - 角色调整保留会话，后续请求使用当前角色。管理员可以调整自己的状态或角色。
 - 若停用或降级会移除最后一个启用中的管理员，返回 409 `last_admin`；并发请求也受该约束保护。
 - 管理写事务取得数据库锁后重新检查操作者权限。等待期间被降级的操作者返回 403，被停用的操作者返回 401。
-- 所有响应设置 `Cache-Control: no-store`，写请求执行全局跨源保护。创建用户与初始化、登录共享频率和哈希并发限制，达到上限返回 429 和 `Retry-After`。
+- 所有响应设置 `Cache-Control: no-store`，写请求执行全局跨源保护。创建用户与初始化、登录、修改密码共享频率和哈希并发限制，达到上限返回 429 和 `Retry-After`。
 
 ## 错误
 
@@ -58,9 +60,10 @@ PATCH 仅修改路径指定的字段，不是通用 JSON Patch。字段缺失、
 | 403 | `forbidden` | 当前角色没有管理权限 |
 | 404 | `not_found` | 目标用户不存在 |
 | 409 | `username_taken` | 用户名已占用 |
+| 409 | `email_taken` | 邮箱已占用，包括仅大小写不同 |
 | 409 | `last_admin` | 操作会移除最后一个启用中的管理员 |
 
-状态、角色、ID 和分页参数的字段错误码为 `invalid_value`；用户名、密码沿用既有字段错误码。JSON、Content-Type、请求大小、CSRF、限流和内部错误沿用 [统一失败响应](auth-api.md#失败响应)。请求解析发生在业务授权之前，因此请求格式不合法时可能先返回 400 或 415。
+状态、角色、ID 和分页参数的字段错误码为 `invalid_value`；用户名、密码沿用既有字段错误码；邮箱格式使用 `invalid_format`。JSON、Content-Type、请求大小、CSRF、限流和内部错误沿用 [统一失败响应](auth-api.md#失败响应)。请求解析发生在业务授权之前，因此请求格式不合法时可能先返回 400 或 415。
 
 ## 本地示例
 
@@ -75,7 +78,7 @@ curl -i -c "$cookie_jar" -X POST http://127.0.0.1:8080/api/v1/auth/login \
 
 curl -i -b "$cookie_jar" -X POST http://127.0.0.1:8080/api/v1/users \
   -H 'Content-Type: application/json' \
-  --data '{"username":"alice","password":"another long unique password"}'
+  --data '{"username":"alice","email":"alice@example.com","password":"another long unique password"}'
 curl -i -b "$cookie_jar" 'http://127.0.0.1:8080/api/v1/users?limit=50'
 
 # 将 2 替换为新创建用户的响应 ID。

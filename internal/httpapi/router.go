@@ -15,15 +15,16 @@ import (
 // Authenticator is the business boundary used by HTTP handlers.
 type Authenticator interface {
 	NeedsSetup(context.Context) (bool, error)
-	Setup(context.Context, string, auth.Credentials) (auth.User, error)
+	Setup(context.Context, string, auth.CreateUserInput) (auth.User, error)
 	Login(context.Context, auth.Credentials) (auth.Session, error)
 	Authenticate(context.Context, string) (auth.User, error)
 	Logout(context.Context, string) error
+	ChangePassword(context.Context, int64, string, auth.PasswordChange) error
 }
 
 // UserManager is the business boundary for administrator-managed accounts.
 type UserManager interface {
-	CreateUser(context.Context, int64, auth.Credentials) (auth.User, error)
+	CreateUser(context.Context, int64, auth.CreateUserInput) (auth.User, error)
 	ListUsers(context.Context, int64, auth.ListUsersOptions) (auth.UserPage, error)
 	UpdateUserStatus(context.Context, int64, int64, string) (auth.User, error)
 	UpdateUserRole(context.Context, int64, int64, string) (auth.User, error)
@@ -94,6 +95,7 @@ func NewHandler(config Config) http.Handler {
 		router.With(limit.middleware).Post("/setup", a.setup)
 		router.With(limit.middleware).Post("/login", a.login)
 		router.With(a.requireUser).Get("/me", a.me)
+		router.With(a.requireUser, limit.middleware).Post("/password", a.changePassword)
 		router.Post("/logout", a.logout)
 	})
 	router.Route("/api/v1/users", func(router chi.Router) {

@@ -8,36 +8,42 @@ package dbgen
 import (
 	"context"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const createUser = `-- name: CreateUser :one
 WITH created AS (
-    INSERT INTO users (username, password_hash)
-    VALUES ($1, $2)
-    RETURNING id, username, password_hash, status, created_at, updated_at
+    INSERT INTO users (username, password_hash, email)
+    VALUES ($1, $2, $3)
+    RETURNING id, username, password_hash, status, created_at, updated_at, email, email_key, email_verified_at
 ), assigned AS (
     INSERT INTO user_roles (user_id, role)
     SELECT id, 'member' FROM created
 )
-SELECT id, username, password_hash, status, created_at, updated_at FROM created
+SELECT id, username, password_hash, status, created_at, updated_at, email, email_key, email_verified_at FROM created
 `
 
 type CreateUserParams struct {
 	Username     string
-	PasswordHash string `json:"-"`
+	PasswordHash pgtype.Text `json:"-"`
+	Email        pgtype.Text
 }
 
 type CreateUserRow struct {
-	ID           int64
-	Username     string
-	PasswordHash string
-	Status       string
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
+	ID              int64
+	Username        string
+	PasswordHash    pgtype.Text
+	Status          string
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+	Email           pgtype.Text
+	EmailKey        pgtype.Text
+	EmailVerifiedAt pgtype.Timestamptz
 }
 
 func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (CreateUserRow, error) {
-	row := q.db.QueryRow(ctx, createUser, arg.Username, arg.PasswordHash)
+	row := q.db.QueryRow(ctx, createUser, arg.Username, arg.PasswordHash, arg.Email)
 	var i CreateUserRow
 	err := row.Scan(
 		&i.ID,
@@ -46,12 +52,15 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (CreateU
 		&i.Status,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Email,
+		&i.EmailKey,
+		&i.EmailVerifiedAt,
 	)
 	return i, err
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, username, password_hash, status, created_at, updated_at
+SELECT id, username, password_hash, status, created_at, updated_at, email, email_key, email_verified_at
 FROM users
 WHERE id = $1
 `
@@ -66,12 +75,15 @@ func (q *Queries) GetUserByID(ctx context.Context, id int64) (User, error) {
 		&i.Status,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Email,
+		&i.EmailKey,
+		&i.EmailVerifiedAt,
 	)
 	return i, err
 }
 
 const getUserByUsername = `-- name: GetUserByUsername :one
-SELECT id, username, password_hash, status, created_at, updated_at
+SELECT id, username, password_hash, status, created_at, updated_at, email, email_key, email_verified_at
 FROM users
 WHERE username = $1
 `
@@ -86,6 +98,9 @@ func (q *Queries) GetUserByUsername(ctx context.Context, username string) (User,
 		&i.Status,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Email,
+		&i.EmailKey,
+		&i.EmailVerifiedAt,
 	)
 	return i, err
 }

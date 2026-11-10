@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/PazVz/mini_coder/internal/auth"
@@ -28,6 +29,10 @@ import (
 const setupToken = "integration-only-setup-token-32-bytes"
 
 var credentials = auth.Credentials{Username: "admin", Password: "integration password"}
+
+func newUserInput(username string) auth.CreateUserInput {
+	return auth.CreateUserInput{Username: username, Email: username + "@example.com", Password: credentials.Password}
+}
 
 func newService(t *testing.T) (*auth.Service, *pgxpool.Pool) {
 	t.Helper()
@@ -44,7 +49,7 @@ func newService(t *testing.T) (*auth.Service, *pgxpool.Pool) {
 
 func setup(t *testing.T, service *auth.Service) auth.User {
 	t.Helper()
-	user, err := service.Setup(t.Context(), setupToken, credentials)
+	user, err := service.Setup(t.Context(), setupToken, newUserInput(credentials.Username))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,13 +72,13 @@ func TestSetupAuthorizationAndRace(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := disabled.Setup(ctx, "", credentials); !errors.Is(err, auth.ErrSetupDisabled) {
+	if _, err := disabled.Setup(ctx, "", newUserInput(credentials.Username)); !errors.Is(err, auth.ErrSetupDisabled) {
 		t.Fatalf("disabled setup: %v", err)
 	}
 	if _, err := auth.NewService(pool, "short"); err == nil {
 		t.Fatal("accepted weak setup token")
 	}
-	if _, err := service.Setup(ctx, "wrong-token", credentials); !errors.Is(err, auth.ErrSetupForbidden) {
+	if _, err := service.Setup(ctx, "wrong-token", newUserInput(credentials.Username)); !errors.Is(err, auth.ErrSetupForbidden) {
 		t.Fatalf("setup token: %v", err)
 	}
 	if needed, err := service.NeedsSetup(ctx); err != nil || !needed {
@@ -90,7 +95,7 @@ func TestSetupAuthorizationAndRace(t *testing.T) {
 	for i := 0; i < 6; i++ {
 		wg.Go(func() {
 			<-start
-			_, err := other.Setup(ctx, setupToken, credentials)
+			_, err := other.Setup(ctx, setupToken, newUserInput(credentials.Username))
 			results <- err
 		})
 	}
@@ -128,17 +133,17 @@ func TestSetupAuthorizationAndRace(t *testing.T) {
 
 func TestSetupConflictRollsBack(t *testing.T) {
 	service, pool := newService(t)
-	_, err := dbgen.New(pool).CreateUser(t.Context(), dbgen.CreateUserParams{Username: "admin", PasswordHash: "old hash"})
+	_, err := dbgen.New(pool).CreateUser(t.Context(), dbgen.CreateUserParams{Username: "admin", PasswordHash: pgtype.Text{String: "old hash", Valid: true}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.Setup(t.Context(), setupToken, credentials); !errors.Is(err, auth.ErrUsernameTaken) {
+	if _, err := service.Setup(t.Context(), setupToken, newUserInput(credentials.Username)); !errors.Is(err, auth.ErrUsernameTaken) {
 		t.Fatalf("conflict: %v", err)
 	}
 	if needed, err := service.NeedsSetup(t.Context()); !needed || err != nil {
 		t.Fatalf("failed setup changed state: %v %v", needed, err)
 	}
-	user, err := service.Setup(t.Context(), setupToken, auth.Credentials{Username: "new-admin", Password: credentials.Password})
+	user, err := service.Setup(t.Context(), setupToken, newUserInput("new-admin"))
 	if err != nil || user.Role != "admin" {
 		t.Fatalf("retry setup: %+v %v", user, err)
 	}
@@ -160,7 +165,7 @@ func TestSessionLifecycle(t *testing.T) {
 		t.Fatal("session token stored in plaintext")
 	}
 	persisted, err := dbgen.New(pool).GetUserByID(t.Context(), user.ID)
-	if err != nil || !strings.HasPrefix(persisted.PasswordHash, "$argon2id$") || strings.Contains(persisted.PasswordHash, credentials.Password) {
+	if err != nil || !strings.HasPrefix(persisted.PasswordHash.String, "$argon2id$") || strings.Contains(persisted.PasswordHash.String, credentials.Password) {
 		t.Fatal("password was not hashed")
 	}
 	anotherPool, err := pgxpool.NewWithConfig(t.Context(), pool.Config())
@@ -342,11 +347,20 @@ func TestHTTPAuthRoundTrip(t *testing.T) {
 		return string(data)
 	}
 	body := fmt.Sprintf(`{"username":%q,"password":%q}`, credentials.Username, credentials.Password)
+	setupBody := fmt.Sprintf(`{"username":%q,"email":"admin@example.com","password":%q}`, credentials.Username, credentials.Password)
 	request(http.MethodGet, "/api/v1/auth/me", "", http.StatusUnauthorized)
-	request(http.MethodPost, "/api/v1/auth/setup", body, http.StatusCreated)
-	request(http.MethodPost, "/api/v1/auth/setup", body, http.StatusConflict)
+	request(http.MethodPost, "/api/v1/auth/setup", setupBody, http.StatusCreated)
+	request(http.MethodPost, "/api/v1/auth/setup", setupBody, http.StatusConflict)
 	request(http.MethodPost, "/api/v1/auth/login", body, http.StatusOK)
 	request(http.MethodGet, "/api/v1/auth/me", "", http.StatusOK)
+	otherSession := login(t, service)
+	request(http.MethodPost, "/api/v1/auth/password", `{"current_password":"integration password","new_password":"new private password"}`, http.StatusNoContent)
+	request(http.MethodGet, "/api/v1/auth/me", "", http.StatusUnauthorized)
+	if _, err := service.Authenticate(t.Context(), otherSession.Token); !errors.Is(err, auth.ErrUnauthenticated) {
+		t.Fatalf("HTTP password change did not revoke another session: %v", err)
+	}
+	request(http.MethodPost, "/api/v1/auth/login", body, http.StatusUnauthorized)
+	request(http.MethodPost, "/api/v1/auth/login", `{"username":"admin","password":"new private password"}`, http.StatusOK)
 	request(http.MethodPost, "/api/v1/auth/logout", "", http.StatusNoContent)
 	request(http.MethodGet, "/api/v1/auth/me", "", http.StatusUnauthorized)
 	request(http.MethodPost, "/api/v1/auth/logout", "", http.StatusNoContent)
@@ -362,7 +376,7 @@ func TestSetupRollsBackAfterUserCreation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.Setup(ctx, setupToken, credentials); err == nil {
+	if _, err := service.Setup(ctx, setupToken, newUserInput(credentials.Username)); err == nil {
 		t.Fatal("setup ignored database failure")
 	}
 	var users, roles int

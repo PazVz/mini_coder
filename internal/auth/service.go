@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/PazVz/mini_coder/internal/database/dbgen"
@@ -32,6 +32,8 @@ var (
 	ErrSetupForbidden = errors.New("invalid setup token")
 	// ErrUsernameTaken indicates that another user has the requested username.
 	ErrUsernameTaken = errors.New("username already exists")
+	// ErrEmailTaken indicates that another user has the same case-insensitive email key.
+	ErrEmailTaken = errors.New("email already exists")
 )
 
 var usernamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{2,31}$`)
@@ -49,7 +51,7 @@ type ValidationError struct{ Fields []FieldError }
 // Error implements error for credential validation failures.
 func (e *ValidationError) Error() string { return "validation failed" }
 
-// Credentials contains the username and password supplied for setup or login.
+// Credentials contains the username and password supplied for login.
 type Credentials struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
@@ -58,12 +60,14 @@ type Credentials struct {
 // User is an explicit public representation; database hashes never reach HTTP.
 // IDs are decimal strings so browser clients don't lose bigint precision.
 type User struct {
-	ID        int64     `json:"id,string"`
-	Username  string    `json:"username"`
-	Status    string    `json:"status"`
-	Role      string    `json:"role"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID            int64     `json:"id,string"`
+	Username      string    `json:"username"`
+	Email         string    `json:"email"`
+	EmailVerified bool      `json:"email_verified"`
+	Status        string    `json:"status"`
+	Role          string    `json:"role"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
 }
 
 // Session is a newly issued login session. Token is returned only through the session cookie.
@@ -123,7 +127,7 @@ func validateCredentials(credentials Credentials) error {
 }
 
 // Setup creates the initial administrator and completes setup in one transaction.
-func (s *Service) Setup(ctx context.Context, token string, credentials Credentials) (User, error) {
+func (s *Service) Setup(ctx context.Context, token string, input CreateUserInput) (User, error) {
 	if s.setupToken == "" {
 		return User{}, ErrSetupDisabled
 	}
@@ -131,10 +135,11 @@ func (s *Service) Setup(ctx context.Context, token string, credentials Credentia
 	if subtle.ConstantTimeCompare(expected[:], supplied[:]) != 1 {
 		return User{}, ErrSetupForbidden
 	}
-	if err := validateCredentials(credentials); err != nil {
+	email, err := validateCreateUser(input)
+	if err != nil {
 		return User{}, err
 	}
-	passwordHash := hashPassword(credentials.Password)
+	passwordHash := hashPassword(input.Password)
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return User{}, fmt.Errorf("begin setup: %w", err)
@@ -152,15 +157,12 @@ func (s *Service) Setup(ctx context.Context, token string, credentials Credentia
 	}
 	// CreateUser also assigns the default member role in database/queries/users.sql.
 	user, err := txQueries.CreateUser(ctx, dbgen.CreateUserParams{
-		Username:     credentials.Username,
-		PasswordHash: passwordHash,
+		Username:     input.Username,
+		PasswordHash: pgtype.Text{String: passwordHash, Valid: true},
+		Email:        pgtype.Text{String: email, Valid: true},
 	})
 	if err != nil {
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == "users_username_key" {
-			return User{}, ErrUsernameTaken
-		}
-		return User{}, fmt.Errorf("create initial user: %w", err)
+		return User{}, fmt.Errorf("create initial user: %w", userCreationError(err))
 	}
 	if err := txQueries.SetAdminRole(ctx, user.ID); err != nil {
 		return User{}, fmt.Errorf("assign admin: %w", err)
@@ -172,12 +174,14 @@ func (s *Service) Setup(ctx context.Context, token string, credentials Credentia
 		return User{}, fmt.Errorf("commit setup: %w", err)
 	}
 	return User{
-		ID:        user.ID,
-		Username:  user.Username,
-		Status:    user.Status,
-		Role:      "admin",
-		CreatedAt: user.CreatedAt,
-		UpdatedAt: user.UpdatedAt,
+		ID:            user.ID,
+		Username:      user.Username,
+		Email:         user.Email.String,
+		EmailVerified: user.EmailVerifiedAt.Valid,
+		Status:        user.Status,
+		Role:          "admin",
+		CreatedAt:     user.CreatedAt,
+		UpdatedAt:     user.UpdatedAt,
 	}, nil
 }
 
@@ -190,22 +194,22 @@ func (s *Service) Login(ctx context.Context, credentials Credentials) (Session, 
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return Session{}, fmt.Errorf("find login user: %w", err)
 	}
-	passwordHash := user.PasswordHash
-	if errors.Is(err, pgx.ErrNoRows) {
-		// Unknown users still incur the same password hashing work.
+	passwordHash := user.PasswordHash.String
+	if errors.Is(err, pgx.ErrNoRows) || !user.PasswordHash.Valid {
+		// Unknown and passwordless users still incur the same password hashing work.
 		passwordHash = s.dummyHash
 	}
 	match, err := verifyPassword(passwordHash, credentials.Password)
 	if err != nil {
 		return Session{}, fmt.Errorf("verify password: %w", err)
 	}
-	if !match || user.ID == 0 || user.Status != "active" {
+	if !match || user.ID == 0 || !user.PasswordHash.Valid || user.Status != "active" {
 		return Session{}, ErrInvalidCredentials
 	}
 
 	// The user row lock in database/queries/auth.sql serializes session creation
-	// with disabling the user. The users_revoke_sessions trigger in migration
-	// 00002_auth.sql then cannot miss an in-flight insert, even across processes.
+	// with disabling the user or changing credentials. Migration 00004's trigger
+	// then cannot miss an in-flight insert, even across processes.
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return Session{}, fmt.Errorf("begin login: %w", err)
@@ -238,12 +242,14 @@ func (s *Service) Login(ctx context.Context, credentials Credentials) (Session, 
 	}
 	return Session{
 		User: User{
-			ID:        currentUser.ID,
-			Username:  currentUser.Username,
-			Status:    currentUser.Status,
-			Role:      currentUser.Role,
-			CreatedAt: currentUser.CreatedAt,
-			UpdatedAt: currentUser.UpdatedAt,
+			ID:            currentUser.ID,
+			Username:      currentUser.Username,
+			Email:         currentUser.Email.String,
+			EmailVerified: currentUser.EmailVerifiedAt.Valid,
+			Status:        currentUser.Status,
+			Role:          currentUser.Role,
+			CreatedAt:     currentUser.CreatedAt,
+			UpdatedAt:     currentUser.UpdatedAt,
 		},
 		Token:     token,
 		ExpiresAt: expiresAt,
@@ -275,12 +281,14 @@ func (s *Service) Authenticate(ctx context.Context, token string) (User, error) 
 		return User{}, fmt.Errorf("read session: %w", err)
 	}
 	return User{
-		ID:        user.ID,
-		Username:  user.Username,
-		Status:    user.Status,
-		Role:      user.Role,
-		CreatedAt: user.CreatedAt,
-		UpdatedAt: user.UpdatedAt,
+		ID:            user.ID,
+		Username:      user.Username,
+		Email:         user.Email.String,
+		EmailVerified: user.EmailVerifiedAt.Valid,
+		Status:        user.Status,
+		Role:          user.Role,
+		CreatedAt:     user.CreatedAt,
+		UpdatedAt:     user.UpdatedAt,
 	}, nil
 }
 

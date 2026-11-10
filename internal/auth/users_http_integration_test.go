@@ -79,7 +79,8 @@ func TestHTTPUserManagementRoundTrip(t *testing.T) {
 	request(adminClient, http.MethodPost, "/api/v1/auth/login", adminBody, http.StatusOK, "")
 	request(adminClient, http.MethodPatch, fmt.Sprintf("/api/v1/users/%d/role", admin.ID), `{"role":"member"}`, http.StatusConflict, "last_admin")
 	memberBody := fmt.Sprintf(`{"username":"alice","password":%q}`, credentials.Password)
-	data := request(adminClient, http.MethodPost, "/api/v1/users", memberBody, http.StatusCreated, "")
+	memberCreationBody := fmt.Sprintf(`{"username":"alice","email":"alice@example.com","password":%q}`, credentials.Password)
+	data := request(adminClient, http.MethodPost, "/api/v1/users", memberCreationBody, http.StatusCreated, "")
 	var member auth.User
 	if err := json.Unmarshal(data, &member); err != nil {
 		t.Fatalf("decode created user: %v; body=%s", err, data)
@@ -90,7 +91,7 @@ func TestHTTPUserManagementRoundTrip(t *testing.T) {
 	if member.Status != "active" {
 		t.Fatalf("created user status = %q, want active", member.Status)
 	}
-	request(adminClient, http.MethodPost, "/api/v1/users", memberBody, http.StatusConflict, "username_taken")
+	request(adminClient, http.MethodPost, "/api/v1/users", memberCreationBody, http.StatusConflict, "username_taken")
 	request(memberClient, http.MethodPost, "/api/v1/auth/login", memberBody, http.StatusOK, "")
 	rolePath := fmt.Sprintf("/api/v1/users/%d/role", member.ID)
 	statusPath := fmt.Sprintf("/api/v1/users/%d/status", member.ID)

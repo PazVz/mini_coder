@@ -72,9 +72,9 @@ make migrate-up
 
 迁移命令有 1 分钟超时，并以数据库 advisory lock 防止并发执行迁移。重复执行 `migrate-up` 不会再次应用已完成的版本。迁移 SQL 嵌入迁移程序，执行二进制时无需源码目录。
 
-`make migrate-down` 回滚最近一次迁移。当前第三版回滚只删除用户管理锁表，保留账号与会话，但新管理接口需要该表；继续回滚认证迁移会删除会话、角色和初始化状态，保留用户，重新升级会重新开放初始化；继续回滚第一版会删除整个用户表及其数据，只在可丢弃的数据环境中使用。日常数据库升级通过新增迁移完成，已应用的迁移文件保持不变。
+`make migrate-down` 回滚最近一次迁移。第四版回滚会删除邮箱信息，并恢复密码非空及仅停用撤销会话的规则；若存在 NULL 密码账号，回滚整体失败，须先处理这些账号的登录方式，不能自动填充密码。第三版回滚只删除用户管理锁表，保留账号与会话，但新管理接口需要该表；继续回滚认证迁移会删除会话、角色和初始化状态，保留用户，重新升级会重新开放初始化；继续回滚第一版会删除整个用户表及其数据，只在可丢弃的数据环境中使用。日常数据库升级通过新增迁移完成，已应用的迁移文件保持不变。
 
-修改 `internal/database/queries/` 或新增迁移后执行 `make generate`，提交 SQL 和 `internal/database/dbgen/` 中的生成结果。`make generate-check` 检查生成文件是否同步。用户模型和用户名规则见 [ADR-0007](adr/0007-postgresql-user-persistence.md)，认证表结构及约定见 [ADR-0008](adr/0008-authentication-and-http-errors.md)。
+修改 `internal/database/queries/` 或新增迁移后执行 `make generate`，提交 SQL 和 `internal/database/dbgen/` 中的生成结果。`make generate-check` 检查生成文件是否同步。用户模型和用户名规则见 [ADR-0007](adr/0007-postgresql-user-persistence.md)，认证表结构及约定见 [ADR-0008](adr/0008-authentication-and-http-errors.md)，主邮箱、无本地密码兼容和修改密码见 [ADR-0010](adr/0010-primary-email-and-password-change.md)。
 
 `make db-down` 停止并移除本项目容器，保留数据库卷；再次执行 `make db-up` 会复用已有数据。初次创建卷后修改 Compose 的账号或密码不会修改已有数据库账号。
 
@@ -94,7 +94,7 @@ make test-integration
 make check
 ```
 
-`make test` 无需数据库；`test-integration` 使用真实 PostgreSQL，要求配置测试连接，缺失配置或无法连接时失败。每个测试创建随机 schema，限定 `search_path`，并在完成后清理自身 schema；账号需要创建 schema 的权限。测试验证迁移升级、重复升级、回滚及重新升级、用户持久化、数据约束、初始化竞争、会话持久化与撤销、账号停用竞争，用户管理权限、游标分页、最后管理员并发保护、等待中的权限撤销、更新失败回滚，以及使用真实 Cookie 的 HTTP 登录与用户管理闭环。不要指向生产数据库。
+`make test` 无需数据库；`test-integration` 使用真实 PostgreSQL，要求配置测试连接，缺失配置或无法连接时失败。每个测试创建随机 schema，限定 `search_path`，并在完成后清理自身 schema；账号需要创建 schema 的权限。测试验证迁移升级、重复升级、回滚及重新升级、用户持久化、数据约束、初始化竞争、会话持久化与撤销、账号停用竞争，用户管理权限、游标分页、最后管理员并发保护、等待中的权限撤销、更新失败回滚，邮箱唯一约束与并发冲突、旧账号与无密码账号、改密撤销与事务回滚、等待期间过期或撤销的会话，以及使用真实 Cookie 的 HTTP 登录、改密与用户管理闭环。不要指向生产数据库。
 
 `make check` 包含单元测试与集成测试。CI 和发布 workflow 使用相同 PostgreSQL 镜像及专用测试库。
 

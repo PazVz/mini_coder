@@ -6,6 +6,8 @@ package dbgen
 
 import (
 	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type AuthSetup struct {
@@ -21,12 +23,15 @@ type Session struct {
 }
 
 type User struct {
-	ID           int64
-	Username     string
-	PasswordHash string `json:"-"`
-	Status       string
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
+	ID              int64
+	Username        string
+	PasswordHash    pgtype.Text `json:"-"`
+	Status          string
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+	Email           pgtype.Text
+	EmailKey        pgtype.Text
+	EmailVerifiedAt pgtype.Timestamptz
 }
 
 type UserManagementLock struct {

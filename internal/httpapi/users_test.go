@@ -14,13 +14,13 @@ import (
 )
 
 type fakeUsers struct {
-	create func(int64, auth.Credentials) (auth.User, error)
+	create func(int64, auth.CreateUserInput) (auth.User, error)
 	list   func(int64, auth.ListUsersOptions) (auth.UserPage, error)
 	status func(int64, int64, string) (auth.User, error)
 	role   func(int64, int64, string) (auth.User, error)
 }
 
-func (f fakeUsers) CreateUser(_ context.Context, actor int64, credentials auth.Credentials) (auth.User, error) {
+func (f fakeUsers) CreateUser(_ context.Context, actor int64, credentials auth.CreateUserInput) (auth.User, error) {
 	return f.create(actor, credentials)
 }
 
@@ -56,6 +56,7 @@ func TestUserRequestBoundaries(t *testing.T) {
 		status int
 	}{
 		{"creation role injection", http.MethodPost, "/api/v1/users", `{"username":"alice","password":"a long password","role":"admin"}`, "invalid_json", http.StatusBadRequest},
+		{"creation verification injection", http.MethodPost, "/api/v1/users", `{"username":"alice","email":"alice@example.com","password":"a long password","email_verified":true}`, "invalid_json", http.StatusBadRequest},
 		{"status mass assignment", http.MethodPatch, "/api/v1/users/2/status", `{"status":"active","role":"admin"}`, "invalid_json", http.StatusBadRequest},
 		{"role wrong type", http.MethodPatch, "/api/v1/users/2/role", `{"role":42}`, "invalid_json", http.StatusBadRequest},
 		{"null patch", http.MethodPatch, "/api/v1/users/2/status", `null`, "invalid_json", http.StatusBadRequest},
@@ -91,13 +92,16 @@ func TestUserHandlersForwardAuthenticatedActor(t *testing.T) {
 		Status:   "active",
 	}
 	handler := newUserTestHandler(fakeUsers{
-		create: func(actor int64, credentials auth.Credentials) (auth.User, error) {
+		create: func(actor int64, credentials auth.CreateUserInput) (auth.User, error) {
 			calls++
 			if actor != 7 {
 				t.Fatalf("creation actor = %d, want 7", actor)
 			}
 			if credentials.Username != "alice" {
 				t.Fatalf("creation username = %q, want alice", credentials.Username)
+			}
+			if credentials.Email != "alice@example.com" {
+				t.Fatal("creation email did not match the request")
 			}
 			if credentials.Password != "a long password" {
 				t.Fatal("creation password did not match the request")
@@ -150,7 +154,7 @@ func TestUserHandlersForwardAuthenticatedActor(t *testing.T) {
 		body   string
 		status int
 	}{
-		{http.MethodPost, "/api/v1/users", `{"username":"alice","password":"a long password"}`, http.StatusCreated},
+		{http.MethodPost, "/api/v1/users", `{"username":"alice","email":"alice@example.com","password":"a long password"}`, http.StatusCreated},
 		{http.MethodGet, "/api/v1/users?after_id=9007199254740993&limit=25", "", http.StatusOK},
 		{http.MethodPatch, "/api/v1/users/9007199254740993/status", `{"status":"disabled"}`, http.StatusOK},
 		{http.MethodPatch, "/api/v1/users/9007199254740993/role", `{"role":"admin"}`, http.StatusOK},
@@ -237,7 +241,7 @@ func TestUserCreationSharesHashRateLimit(t *testing.T) {
 				return auth.Session{}, auth.ErrInvalidCredentials
 			},
 		},
-		Users: fakeUsers{create: func(int64, auth.Credentials) (auth.User, error) {
+		Users: fakeUsers{create: func(int64, auth.CreateUserInput) (auth.User, error) {
 			return auth.User{}, auth.ErrUsernameTaken
 		}},
 		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
