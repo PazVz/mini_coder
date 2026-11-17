@@ -30,7 +30,7 @@ func TestMigrations(t *testing.T) {
 	ctx := t.Context()
 	for _, state := range []goose.State{goose.StatePending, goose.StateApplied} {
 		statuses, err := provider.Status(ctx)
-		if err != nil || len(statuses) != 4 {
+		if err != nil || len(statuses) != 5 {
 			t.Fatalf("migration status = %v, error = %v", statuses, err)
 		}
 		for _, status := range statuses {
@@ -47,7 +47,10 @@ func TestMigrations(t *testing.T) {
 	if _, err := provider.Down(ctx); err != nil {
 		t.Fatal(err)
 	}
-	// Roll back user management, authentication and then the original users migration.
+	// Roll back primary email, user management, authentication and original users.
+	if _, err := provider.Down(ctx); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := provider.Down(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -159,7 +162,10 @@ func TestAuthMigrationPreservesExistingUsers(t *testing.T) {
 	if err != nil || u.ID != id || u.Role != "member" {
 		t.Fatalf("upgrade user: %+v %v", u, err)
 	}
-	// Remove email fields and the management gate before rolling back authentication.
+	// Remove verification, primary email and the management gate before authentication.
+	if _, err := provider.Down(ctx); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := provider.Down(ctx); err != nil {
 		t.Fatal(err)
 	}

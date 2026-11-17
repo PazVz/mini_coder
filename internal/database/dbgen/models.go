@@ -15,6 +15,23 @@ type AuthSetup struct {
 	Initialized bool
 }
 
+type EmailAction struct {
+	TokenHash []byte
+	Purpose   string
+	UserID    pgtype.Int8
+	Email     string
+	EmailKey  pgtype.Text
+	CreatedAt time.Time
+	ExpiresAt time.Time
+}
+
+type EmailDeliveryLimit struct {
+	EmailKey        string
+	WindowStart     time.Time
+	LastRequestedAt time.Time
+	Attempts        int32
+}
+
 type Session struct {
 	TokenHash []byte
 	UserID    int64

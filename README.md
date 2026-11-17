@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-已实现 Chi HTTP 服务、统一失败响应、健康检查、优雅退出、PostgreSQL 持久化、首次管理员初始化、密码登录和 Session + Cookie 会话，以及测试和发布打包脚本、GitHub Actions 配置。已提供管理员用户管理 API、admin/member 固定角色授权、唯一主邮箱资料及修改密码后撤销全部会话。SMTP 验证、自助注册和 OIDC 待实现。工作区归属授权、Docker 资源管理、前端和 semantic-release 待实现。
+已实现 Chi HTTP 服务、统一失败响应、健康检查、优雅退出、PostgreSQL 持久化、首次管理员初始化、密码登录和 Session + Cookie 会话，以及测试和发布打包脚本、GitHub Actions 配置。已提供管理员用户管理 API、admin/member 固定角色授权、唯一主邮箱资料及修改密码后撤销全部会话。已支持 SMTP 邮箱验证、自助补录与换址，以及先验证邮箱再注册，并提供最小注册与确认页面。密码找回、OIDC、工作区归属授权、Docker 资源管理、Vue 界面和 semantic-release 待实现。
 
 ## 快速开始
 
@@ -26,7 +26,7 @@ make run
 curl -i http://127.0.0.1:8080/healthz
 ```
 
-响应为 HTTP 200 和 `{"status":"ok"}`。健康检查只报告进程存活。服务启动要求数据库可连接，迁移需预先显式执行。首次管理员初始化与登录操作见 [认证 API](docs/auth-api.md)，账号创建、启停与角色调整见 [用户管理 API](docs/users-api.md)。
+响应为 HTTP 200 和 `{"status":"ok"}`。健康检查只报告进程存活。服务启动要求数据库可连接，迁移需预先显式执行。首次管理员初始化与登录操作见 [认证 API](docs/auth-api.md)，账号创建、启停与角色调整见 [用户管理 API](docs/users-api.md)，SMTP 配置、注册与邮箱维护见 [邮箱 API](docs/email-api.md)。
 
 首次创建测试数据库，再运行完整检查：
 

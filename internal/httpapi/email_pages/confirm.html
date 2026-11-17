@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>确认邮箱 · mini_coder</title>
+  <link rel="stylesheet" href="/auth/email.css">
+  <script src="/auth/email.js" defer></script>
+</head>
+<body data-flow="confirm">
+  <main>
+    <p class="brand">mini_coder</p>
+    <h1>确认主邮箱</h1>
+    <p>请使用已登录对应账号的浏览器，确认这次邮箱验证或修改。</p>
+    <form id="confirm-form" hidden>
+      <button type="submit">确认邮箱</button>
+    </form>
+    <p id="status" role="status" aria-live="polite"></p>
+    <noscript>请启用 JavaScript 以确认邮箱。</noscript>
+  </main>
+</body>
+</html>
