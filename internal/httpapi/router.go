@@ -56,7 +56,7 @@ type api struct {
 	cookieSecure bool
 }
 
-// NewHandler creates a single Chi router for health checks and API endpoints.
+// NewHandler creates a single Chi router for health checks, API endpoints and the Vue frontend.
 func NewHandler(config Config) http.Handler {
 	logger := config.Logger
 	if logger == nil {
@@ -100,12 +100,7 @@ func NewHandler(config Config) http.Handler {
 	})
 	router.Get("/healthz", healthz)
 	router.Head("/healthz", healthz)
-	router.Get("/auth/register", registrationPage)
-	router.Head("/auth/register", registrationPage)
-	router.Get("/auth/email/confirm", emailConfirmationPage)
-	router.Head("/auth/email/confirm", emailConfirmationPage)
-	router.Get("/auth/email.js", emailScript)
-	router.Get("/auth/email.css", emailStyle)
+	registerFrontend(router)
 	limit := newAttemptLimiter(time.Now)
 	router.Route("/api/v1/auth", func(router chi.Router) {
 		router.Use(noStore)

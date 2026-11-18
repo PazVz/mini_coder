@@ -2,12 +2,13 @@
 
 ## 当前实现
 
-当前程序是使用 Chi 路由的单进程 HTTP 服务，已接入 PostgreSQL、版本化迁移、用户与会话持久化，完成首次管理员初始化、密码认证、主邮箱验证与维护、先验证邮箱再注册、修改密码、管理员用户管理和固定角色授权。当前有内嵌的注册与邮件确认页；工作区归属授权、Docker 资源管理和 Vue 界面待实现。
+当前程序是使用 Chi 路由的单进程 HTTP 服务，已接入 PostgreSQL、版本化迁移、用户与会话持久化，完成首次管理员初始化、密码认证、主邮箱验证与维护、先验证邮箱再注册、修改密码、管理员用户管理和固定角色授权。当前有 Vue 初始化、注册、登录、邮箱确认和账号管理界面，构建资源嵌入 Go；工作区归属授权与 Docker 资源管理待实现。
 
 ```text
 cmd/server/                  进程入口、配置、信号处理和优雅退出
 cmd/migrate/                 独立迁移命令，支持 up / down / status
-internal/httpapi/            Chi 路由、统一失败响应、Cookie、CSRF 与限流
+internal/httpapi/            Chi 路由、统一失败响应、Cookie、CSRF、限流与前端资源
+web/                        Vue + TypeScript 页面、Vite 配置、浏览器测试与资源嵌入
 internal/auth/               账号、注册、邮件证明、密码认证、修改密码与会话业务
 internal/mailer/             有超时和 TLS 校验的 SMTP 投递
 internal/authz/              内置角色到用户管理权限的固定映射
@@ -32,7 +33,7 @@ docs/                       项目指南、架构与决策记录
 
 主邮箱输入在 `auth/email.go` 校验，数据库生成大小写不敏感的 `email_key` 并执行唯一约束；旧账号邮箱允许为空，`email_verified_at` 独立记录验证状态。`password_hash` 允许为空以兼容未来外部登录。邮箱模型与无密码兼容见 [ADR-0010](adr/0010-primary-email-and-password-change.md)。
 
-邮件流程按 `httpapi/email.go` → `auth/email_workflows.go` → `database/queries/email.sql` 阅读。业务通过 `mailer.SMTP` 发信，数据库保存有用途和期限的令牌哈希及共享邮箱配额；消费和用户写入在同一事务完成。`migrations/00005_email_verification.sql` 定义证明表和敏感变更时的失效触发器。HTTP 包嵌入最小注册、确认页，令牌放在 URL fragment，GET 不消费。设计见 [ADR-0011](adr/0011-smtp-email-verification-and-registration.md)，配置和端点见 [邮箱 API](email-api.md)。密码找回和 OIDC 待实现。
+邮件流程按 `httpapi/email.go` → `auth/email_workflows.go` → `database/queries/email.sql` 阅读。业务通过 `mailer.SMTP` 发信，数据库保存有用途和期限的令牌哈希及共享邮箱配额；消费和用户写入在同一事务完成。`migrations/00005_email_verification.sql` 定义证明表和敏感变更时的失效触发器。Vue 提供注册和确认页，构建资源通过 `web/embed.go` 嵌入，HTTP 包按页面路径提供入口。令牌放在 URL fragment，应用在创建路由器前读取并清除，GET 不消费。前端与构建设计见 [ADR-0012](adr/0012-vue-authentication-interface.md)。设计见 [ADR-0011](adr/0011-smtp-email-verification-and-registration.md)，配置和端点见 [邮箱 API](email-api.md)。密码找回和 OIDC 待实现。
 
 数据层从 `migrations/00001_create_users.sql` 和 `queries/users.sql` 开始阅读。`database.Open` 创建连接池并验证连接；`dbgen.New(pool)` 提供用户创建和查询，`WithTx` 支持事务。`cmd/migrate` 通过 Goose 执行嵌入的迁移，HTTP 服务不自动修改表结构。`/healthz`、`/api/v1/auth` 与 `/api/v1/users` 都使用 Chi。HTTP 层通过小接口调用 `auth.Service`，统一映射业务错误；业务层使用 sqlc 和 pgx 事务，密码哈希与会话令牌不进入用户响应。用户基础规则见 [ADR-0007](adr/0007-postgresql-user-persistence.md)，认证模型、并发规则及错误格式见 [ADR-0008](adr/0008-authentication-and-http-errors.md)，接口见 [认证 API](auth-api.md)。
 
@@ -74,7 +75,7 @@ flowchart LR
 
 已确定 HTTP 路由采用 [Chi](adr/0003-http-routing-with-chi.md)，浏览器认证采用 [服务端 Session + Cookie](adr/0004-server-side-browser-sessions.md)，资源授权采用 [RBAC 与资源归属约束](adr/0005-rbac-resource-authorization.md)。工作区访问按 [先 xterm.js 终端、后 IDE 集成](adr/0006-terminal-before-ide.md) 推进。Chi、浏览器认证与用户管理 RBAC 已实现；工作区归属授权和访问待实现。
 
-Go 为现有后端语言；前端优先 Vue + TypeScript，构建工具优先考虑 Vite；Docker Engine 是首个资源后端。持久化已采用 [PostgreSQL + pgx + sqlc + Goose](adr/0007-postgresql-user-persistence.md)。当前 RBAC 使用代码中的固定权限映射；前端具体依赖随功能实现确定，版本规则见 [本地开发](development.md)。
+Go 为现有后端语言；前端已采用 Vue + TypeScript 与 Vite；Docker Engine 是首个资源后端。持久化已采用 [PostgreSQL + pgx + sqlc + Goose](adr/0007-postgresql-user-persistence.md)。当前 RBAC 使用代码中的固定权限映射；前端版本见 [前端开发](frontend.md)，版本规则见 [本地开发](development.md)。
 
 Session 管理登录身份和有效期，RBAC 根据角色判断动作权限，再按资源归属约束作用范围。授权规则集中在业务层，列表查询同样按可访问范围过滤。额度、并发限制和资源放置由资源管理与调度模块负责；终端握手及后续 IDE 访问复用资源授权规则，详见 [工作区访问设计](workspace-access.md)。
 

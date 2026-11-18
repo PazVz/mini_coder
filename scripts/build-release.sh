@@ -8,6 +8,7 @@ if [[ ! "$version" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; t
 fi
 
 go_command="${GO:-go}"
+make web-build
 output_dir="dist/$version"
 mkdir -p "$output_dir"
 build_dir="$(mktemp -d)"

@@ -15,7 +15,7 @@
 
 版本在实际引入时核实官方稳定发布并固定，不在这份方向性记录中预先指定版本号。
 
-后续进展：持久化工具与最小用户模型已通过 [ADR-0007](0007-postgresql-user-persistence.md) 采纳并实现，其余架构方向仍按本记录的提议状态管理。
+后续进展：持久化工具与最小用户模型已通过 [ADR-0007](0007-postgresql-user-persistence.md) 采纳并实现，Vue 前端与同源部署已通过 [ADR-0012](0012-vue-authentication-interface.md) 采纳并实现，其余架构方向仍按本记录的提议状态管理。
 
 ## 备选方案
 
