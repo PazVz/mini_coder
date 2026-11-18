@@ -1,0 +1,35 @@
+{
+  "name": "mini-coder-web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "npm@11.20.0",
+  "engines": {
+    "node": "26.13.1",
+    "npm": "11.20.0"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc --noEmit && vite build",
+    "type-check": "vue-tsc --noEmit",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "format": "prettier --write src e2e *.ts *.json index.html",
+    "format-check": "prettier --check src e2e *.ts *.json index.html"
+  },
+  "dependencies": {
+    "vue": "3.5.45",
+    "vue-router": "5.5.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "6.0.11",
+    "@types/node": "26.6.6",
+    "typescript": "6.0.3",
+    "vue-tsc": "3.3.14",
+    "vite": "8.3.8",
+    "vitest": "5.1.0",
+    "jsdom": "31.0.1",
+    "@playwright/test": "1.65.1",
+    "prettier": "3.10.1"
+  }
+}

@@ -4,13 +4,15 @@
 
 ## 当前状态
 
-已实现 Chi HTTP 服务、统一失败响应、健康检查、优雅退出、PostgreSQL 持久化、首次管理员初始化、密码登录和 Session + Cookie 会话，以及测试和发布打包脚本、GitHub Actions 配置。已提供管理员用户管理 API、admin/member 固定角色授权、唯一主邮箱资料及修改密码后撤销全部会话。已支持 SMTP 邮箱验证、自助补录与换址，以及先验证邮箱再注册，并提供最小注册与确认页面。密码找回、OIDC、工作区归属授权、Docker 资源管理、Vue 界面和 semantic-release 待实现。
+已实现 Chi HTTP 服务、统一失败响应、健康检查、优雅退出、PostgreSQL 持久化、首次管理员初始化、密码登录和 Session + Cookie 会话，以及测试和发布打包脚本、GitHub Actions 配置。已提供管理员用户管理 API、admin/member 固定角色授权、唯一主邮箱资料及修改密码后撤销全部会话。已支持 SMTP 邮箱验证、自助补录与换址，以及先验证邮箱再注册，并提供 Vue 初始化、注册、登录、邮箱确认和账号管理界面。密码找回、OIDC、工作区归属授权、Docker 资源管理和 semantic-release 待实现。
 
 ## 快速开始
 
-Go 版本以 [go.mod](go.mod) 为准；另需 Git、Make、Bash、C 编译器，以及 Docker Engine 与 Compose v2（或可连接的 PostgreSQL 18.6）。
+Go 版本以 [go.mod](go.mod) 为准；前端工具链见 [.nvmrc](.nvmrc)；另需 Git、Make、Bash、C 编译器，以及 Docker Engine 与 Compose v2（或可连接的 PostgreSQL 18.6）。
 
 ```bash
+nvm install
+nvm use
 cp .env.example .env
 set -a
 . ./.env
@@ -20,7 +22,9 @@ make migrate-up
 make run
 ```
 
-另开终端：
+浏览器打开 `http://127.0.0.1:8080`，首次使用会进入管理员初始化页面。令牌与 SMTP 配置见 [前端开发](docs/frontend.md)。修改 Vue 时，另开终端运行 `make web-dev`，访问 5173 端口。
+
+另开终端检查服务：
 
 ```bash
 curl -i http://127.0.0.1:8080/healthz
@@ -35,7 +39,7 @@ docker compose exec postgres createdb -U minicoder minicoder_test
 make check
 ```
 
-`make check` 包含生成代码一致性检查和真实数据库集成测试。连接配置、迁移回滚及发布包使用见 [本地开发](docs/development.md)。
+`make check` 包含前端类型、格式、构建与单元测试、Go 检查和真实数据库集成测试。浏览器流程另运行 `make test-browser`，准备方式见 [前端开发](docs/frontend.md)。连接配置、迁移回滚及发布包使用见 [本地开发](docs/development.md)。
 
 ## 文档
 
@@ -45,6 +49,7 @@ make check
 | [项目目标与路线](docs/project.md) | 核心功能范围、阶段目标与验收方向 |
 | [架构草案](docs/architecture.md) | 当前结构、目标职责与 Coder 参考入口 |
 | [本地开发](docs/development.md) | 环境、启动、配置、检查与测试 |
+| [前端开发](docs/frontend.md) | Vue 运行、页面、代码阅读顺序和浏览器测试 |
 | [协作与发布](docs/workflow.md) | PR、Conventional Commits、CI 与发布 |
 | [架构决策记录](docs/adr/README.md) | 决策索引、状态与模板 |
 | [AI 协作入口](AGENTS.md) | AI 执行任务时需要遵循的简短约定 |

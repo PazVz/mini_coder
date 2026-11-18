@@ -7,11 +7,15 @@ VERSION ?= dev
 SQLC_VERSION := v1.31.1
 SQLC := $(GO) run github.com/sqlc-dev/sqlc/cmd/sqlc@$(SQLC_VERSION)
 
-.PHONY: help run fmt fmt-check test test-integration vet build check dist db-up db-down migrate-up migrate-down migrate-status generate generate-check
+.PHONY: help run web-dev web-build web-check test-browser fmt fmt-check test test-integration vet build check dist db-up db-down migrate-up migrate-down migrate-status generate generate-check
 
 help:
 	@printf '%s\n' \
 	  'make run        Start the HTTP server' \
+	  'make web-dev    Start Vite on 127.0.0.1:5173 (API proxy to :8080)' \
+	  'make web-build  Build Vue assets for Go embedding' \
+	  'make web-check  Type-check, build, and test the Vue frontend' \
+	  'make test-browser  Browser auth flow with isolated test database' \
 	  'make fmt        Format Go source files' \
 	  'make check      Check formatting, generated code, vet, tests, and build' \
 	  'make test       Run tests with the race detector' \
@@ -25,23 +29,41 @@ help:
 	  'make build      Build server and migration binaries in bin/' \
 	  'make dist VERSION=v0.1.0  Package Linux release binaries'
 
-run:
+run: web-build
 	$(GO) run ./cmd/server
 
+web/node_modules/.package-lock.json: web/package.json web/package-lock.json
+	npm --prefix web ci
+	@touch $@
+
+web-dev: web/node_modules/.package-lock.json
+	npm --prefix web run dev
+
+web-build: web/node_modules/.package-lock.json
+	npm --prefix web run build
+
+web-check: web-build
+	npm --prefix web run format-check
+	npm --prefix web test
+
+test-browser: web-build
+	@test -n "$${MINICODER_TEST_DATABASE_URL:-}" || { echo 'Set MINICODER_TEST_DATABASE_URL to a test PostgreSQL database.' >&2; exit 1; }
+	$(GO) test -tags=integration,browser -race -count=1 -timeout=3m -run '^TestBrowserAuthFlow$$' -v ./internal/httpapi
+
 fmt:
-	gofmt -w cmd internal
+	gofmt -w cmd internal web/embed.go
 
 fmt-check:
-	@unformatted="$$(gofmt -l cmd internal)"; \
+	@unformatted="$$(gofmt -l cmd internal web/embed.go)"; \
 	if [ -n "$$unformatted" ]; then \
 	  printf 'Run make fmt to format these files:\n%s\n' "$$unformatted"; \
 	  exit 1; \
 	fi
 
-test:
+test: web-build
 	$(GO) test -race -count=1 -cover ./...
 
-test-integration:
+test-integration: web-build
 	@test -n "$${MINICODER_TEST_DATABASE_URL:-}" || { echo 'Set MINICODER_TEST_DATABASE_URL to a test PostgreSQL database.' >&2; exit 1; }
 	$(GO) test -tags=integration -race -count=1 -timeout=2m ./...
 
@@ -66,15 +88,15 @@ generate:
 generate-check:
 	$(SQLC) diff
 
-vet:
+vet: web-build
 	$(GO) vet ./...
 
-build:
+build: web-build
 	mkdir -p bin
 	$(GO) build -trimpath -ldflags "-X main.version=$(VERSION)" -o bin/mini-coder ./cmd/server
 	$(GO) build -trimpath -o bin/mini-coder-migrate ./cmd/migrate
 
-check: fmt-check generate-check vet test test-integration build
+check: web-check fmt-check generate-check vet test test-integration build
 
 dist:
 	GO="$(GO)" bash scripts/build-release.sh "$(VERSION)"

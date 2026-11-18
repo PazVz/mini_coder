@@ -2,6 +2,8 @@
 
 当前实现首次管理员初始化、主邮箱资料、密码登录、修改密码、当前用户查询和退出。SMTP 配置、邮箱验证、自助维护和公开注册见 [邮箱 API](email-api.md)。浏览器通过服务端 Session + Cookie 认证。认证基础见 [ADR-0008](adr/0008-authentication-and-http-errors.md)，邮箱与密码变更见 [ADR-0010](adr/0010-primary-email-and-password-change.md)。
 
+浏览器可从 `/auth/setup` 初始化、`/auth/login` 登录，登录后进入 `/account`；页面和开发启动方式见 [前端开发](frontend.md)。
+
 ## 接口
 
 | 方法与路径 | 请求 | 成功结果 |

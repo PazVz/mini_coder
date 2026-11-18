@@ -4,9 +4,9 @@
 
 Go 版本由 [go.mod](../go.mod) 声明，目前为 `1.27.2`，CI 从该文件读取；本地优先对齐。另需 Git、Make、Bash 和 C 编译器，Linux 下可使用 GCC，编译器用于 `make test` 的 race detector。
 
-Node.js 用于 PR 标题检查；前端工程尚未创建。本地数据库使用 Docker Engine 与 Compose v2，先通过 `docker version` 和 `docker compose version` 确认可用；也可连接独立部署的 PostgreSQL。
+Node.js 用于 Vue 前端构建、测试和 PR 标题检查，版本固定在 `.nvmrc`（26.13.1 LTS）。先运行 `nvm install`、`nvm use`，npm 使用该 Node 附带的 11.20.0；详细配置见 [前端开发](frontend.md)。本地数据库使用 Docker Engine 与 Compose v2，先通过 `docker version` 和 `docker compose version` 确认可用；也可连接独立部署的 PostgreSQL。
 
-新增或升级依赖时查阅官方发布记录，优先选择当前稳定且相互兼容的版本，记录核实日期及来源。Go 对齐 `go.mod`；Node 优先使用受支持的 LTS，前端建立时增加版本文件；前端依赖提交锁文件。已有版本通过独立、可验证的变更升级，文档中的版本说明不代替工具链配置。
+新增或升级依赖时查阅官方发布记录，优先选择当前稳定且相互兼容的版本，记录核实日期及来源。Go 对齐 `go.mod`；Node 使用受支持的 LTS 并对齐 `.nvmrc`；前端依赖提交锁文件。已有版本通过独立、可验证的变更升级，文档中的版本说明不代替工具链配置。
 
 本次数据层版本于 2026-11-07 核实：
 
@@ -44,7 +44,7 @@ make run
 | `MINICODER_SETUP_TOKEN` | 空值禁用初始化写接口；启用时至少 32 字节，建议 `openssl rand -hex 32` 生成 |
 | `MINICODER_COOKIE_SECURE` | 默认 `true`；本地 HTTP 明确设置 `false`，HTTPS 保持 `true` |
 
-初始化管理员、登录和退出示例见 [认证 API](auth-api.md)。SMTP 为可选能力，公开注册默认关闭；环境变量、TLS 模式、最小页面及邮箱维护操作见 [邮箱 API](email-api.md)。
+初始化管理员、登录和退出示例见 [认证 API](auth-api.md)。SMTP 为可选能力，公开注册默认关闭；环境变量、TLS 模式及邮箱维护操作见 [邮箱 API](email-api.md)。
 
 另开终端：
 
@@ -96,7 +96,7 @@ make check
 
 `make test` 无需数据库；`test-integration` 使用真实 PostgreSQL，要求配置测试连接，缺失配置或无法连接时失败。每个测试创建随机 schema，限定 `search_path`，并在完成后清理自身 schema；账号需要创建 schema 的权限。测试验证迁移升级、重复升级、回滚及重新升级、用户持久化、数据约束、初始化竞争、会话持久化与撤销、账号停用竞争，用户管理权限、游标分页、最后管理员并发保护、等待中的权限撤销、更新失败回滚，邮箱唯一约束与并发冲突、旧账号与无密码账号、改密撤销与事务回滚、等待期间过期或撤销的会话，以及邮件令牌用途、过期、重放、并发配额、替换邮箱回滚，使用真实 Cookie 的 HTTP 登录、改密、用户管理与注册换址闭环。不要指向生产数据库。SMTP 测试自行启动回环服务，覆盖 STARTTLS、TLS 直连、证书校验、认证、投递失败和请求取消，不连接真实邮件服务；外部服务配置后需另行确认实际投递。
 
-`make check` 包含单元测试与集成测试。CI 和发布 workflow 使用相同 PostgreSQL 镜像及专用测试库。
+`make check` 包含 Vue 类型、格式、构建与单元测试，以及 Go 单元测试与集成测试。浏览器完整流程另通过 `make test-browser` 验证，见 [前端开发](frontend.md)。CI 和发布 workflow 使用相同 PostgreSQL 镜像及专用测试库。
 
 ## 常用命令
 
@@ -105,7 +105,10 @@ make check
 | 命令 | 作用 |
 | --- | --- |
 | `make` | 查看常用命令 |
-| `make run` | 启动服务 |
+| `make run` | 构建 Vue 并启动 Go 服务 |
+| `make web-dev` | 启动 Vite 热更新服务与 API 开发代理 |
+| `make web-build` / `make web-check` | 构建前端 / 类型、格式、构建和前端单元测试 |
+| `make test-browser` | 隔离数据库上的浏览器认证流程测试 |
 | `make db-up` / `make db-down` | 启停本地数据库，保留卷 |
 | `make migrate-up` / `make migrate-status` | 应用迁移 / 查看状态 |
 | `make migrate-down` | 回滚最近一次迁移，可能删除数据 |
@@ -116,7 +119,7 @@ make check
 | `make test` | 单元及 HTTP 测试、race detector 和覆盖率统计 |
 | `make test-integration` | 真实 PostgreSQL 集成测试与 race detector |
 | `make build` | 构建服务与迁移二进制到 `bin/` |
-| `make check` | 格式、生成结果、静态分析、单元与集成测试、构建 |
+| `make check` | 前端检查与构建，Go 格式、生成结果、静态分析、单元与集成测试、构建 |
 | `make dist VERSION=v0.1.0` | 生成 Linux amd64 / arm64 发布包，不上传 |
 
 ```bash
@@ -130,7 +133,7 @@ make build
 
 ## 实现与测试原则
 
-Go 优先使用标准库和清晰的包职责，错误附带有用上下文，取消和超时使用 `context`。前端接入后遵循 Vue 的官方惯例，按页面与职责组织组件，优先局部状态，跨页面共享需求出现时再引入相应工具。
+Go 优先使用标准库和清晰的包职责，错误附带有用上下文，取消和超时使用 `context`。前端遵循 Vue 的官方惯例，按页面与职责组织组件，优先局部状态，跨页面共享需求出现时再引入相应工具。
 
 测试围绕可观察行为编写。当前使用 `testing`、`httptest` 和真实 PostgreSQL 集成测试；后续重点覆盖权限允许与拒绝、状态转换及 Docker 执行失败等路径。容器行为用相应集成测试验证，前端覆盖关键交互，核心闭环补充少量端到端测试。覆盖率用于发现遗漏，不设机械数字目标。
 

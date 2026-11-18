@@ -45,13 +45,13 @@ feat(api)!: change workspace response format
 
 | Workflow | 触发条件 | 检查 / 结果 |
 | --- | --- | --- |
-| `CI` | 发往 `main` 的 PR、`main` 推送、手动触发 | `Go CI` 执行 `make check` |
+| `CI` | 发往 `main` 的 PR、`main` 推送、手动触发 | `Go CI` 执行 `make check` 与 `make test-browser` |
 | `PR title` | PR 创建、改标题、更新代码、重新打开、转为待评审 | `PR Title` 校验标题格式 |
 | `Release` | 推送 `v*` 标签 | 验证、打包并创建 GitHub Release |
 
 主分支通过 PR 合并，并禁止强推和删除。仓库规则与 workflow 分别配置；如需强制自动验证，在确认 `Go CI` 和 `PR Title` 能成功运行后，将它们设为必需检查。workflow 文件不会自动配置这些规则。
 
-CI 与标题检查声明只读仓库权限；发布任务使用 `contents: write`。Actions 固定 commit SHA，并在注释中标注版本；Go 版本从 `go.mod` 读取。
+CI 与标题检查声明只读仓库权限；发布任务使用 `contents: write`。Actions 固定 commit SHA，并在注释中标注版本；Go 版本从 `go.mod` 读取，Node 版本从 `.nvmrc` 读取。
 
 ## 发布现状
 
